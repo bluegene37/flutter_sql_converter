@@ -7,9 +7,12 @@ import '../models/unipaas_models.dart';
 import '../services/schema_service.dart';
 import '../services/xml_parser_service.dart';
 import '../services/sql_generator_service.dart';
+import '../theme/app_theme.dart';
 
 class MainView extends StatefulWidget {
-  const MainView({super.key});
+  final VoidCallback onToggleTheme;
+
+  const MainView({super.key, required this.onToggleTheme});
 
   @override
   State<MainView> createState() => _MainViewState();
@@ -25,7 +28,8 @@ class _MainViewState extends State<MainView> {
   ProgramMetadata? _selectedProgramMeta;
   ParsedProgram? _parsedProgram;
   List<ProgramParameter> _activeParameters = [];
-  String _generatedSql = '-- Select a program from the left panel and click Generate SQL';
+  String _generatedSql =
+      '-- Select a program from the left panel and click Generate SQL';
   bool _isLoading = true;
   bool _isGenerating = false;
   bool _injectValues = false;
@@ -59,33 +63,48 @@ class _MainViewState extends State<MainView> {
   }
 
   Future<void> _changeSourceDirectory() async {
+    final colors = AppColors.of(context);
     final controller = TextEditingController(text: _sourceDirectory);
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: colors.cardBg,
         title: Row(
           children: [
-            const Icon(Icons.folder, color: Color(0xFF38BDF8)),
+            Icon(Icons.folder, color: colors.accentIcon),
             const SizedBox(width: 8),
-            Text('Select XML Source Folder', style: GoogleFonts.outfit(color: Colors.white, fontSize: 18)),
+            Text(
+              'Select XML Source Folder',
+              style: GoogleFonts.outfit(
+                color: colors.textPrimary,
+                fontSize: 18,
+              ),
+            ),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Enter or pick the folder containing UniPaas XML programs:', style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13)),
+            Text(
+              'Enter or pick the folder containing UniPaas XML programs:',
+              style: GoogleFonts.inter(
+                color: colors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
-              style: GoogleFonts.inter(color: Colors.white),
+              style: GoogleFonts.inter(color: colors.textPrimary),
               decoration: InputDecoration(
                 labelText: 'Folder Path',
-                labelStyle: GoogleFonts.inter(color: const Color(0xFF64748B)),
+                labelStyle: GoogleFonts.inter(color: colors.textMuted),
                 filled: true,
-                fillColor: const Color(0xFF0F172A),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                fillColor: colors.panelBg,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -93,7 +112,9 @@ class _MainViewState extends State<MainView> {
               onPressed: () async {
                 final dir = await FilePicker.getDirectoryPath(
                   dialogTitle: 'Select UniPaas XML Source Folder',
-                  initialDirectory: controller.text.isNotEmpty ? controller.text : null,
+                  initialDirectory: controller.text.isNotEmpty
+                      ? controller.text
+                      : null,
                 );
                 if (dir != null) {
                   controller.text = dir;
@@ -101,27 +122,40 @@ class _MainViewState extends State<MainView> {
               },
               icon: const Icon(Icons.folder_open, size: 16),
               label: Text('Browse Folder...', style: GoogleFonts.inter()),
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3B82F6), foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: colors.accentSecondary,
+                foregroundColor: colors.textOnAccent,
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.inter(color: const Color(0xFF94A3B8))),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.inter(color: colors.textSecondary),
+            ),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              if (controller.text.trim().isNotEmpty && controller.text.trim() != _sourceDirectory) {
+              if (controller.text.trim().isNotEmpty &&
+                  controller.text.trim() != _sourceDirectory) {
                 setState(() {
                   _sourceDirectory = controller.text.trim();
                 });
                 _scanSourceDirectory();
               }
             },
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF06B6D4), foregroundColor: Colors.white),
-            child: Text('Apply & Analyze', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: colors.accent,
+              foregroundColor: colors.textOnAccent,
+            ),
+            child: Text(
+              'Apply & Analyze',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -132,40 +166,55 @@ class _MainViewState extends State<MainView> {
     setState(() => _isLoading = true);
     final dir = Directory(_sourceDirectory);
     if (await dir.exists()) {
-      final files = await dir.list().where((e) => e is File && e.path.toLowerCase().endsWith('.xml')).cast<File>().toList();
-      
+      final files = await dir
+          .list()
+          .where((e) => e is File && e.path.toLowerCase().endsWith('.xml'))
+          .cast<File>()
+          .toList();
+
       final existingByFilename = <String, ProgramMetadata>{};
       for (final p in _schemaService.programs) {
         existingByFilename[p.filename.toLowerCase()] = p;
       }
 
-      final scannedPrograms = await Future.wait(files.map((file) async {
-        final filename = file.uri.pathSegments.last;
-        bool hasTables = false;
-        try {
-          final content = await file.readAsString();
-          final dbMatches = RegExp(r'<(?:DB|DataObject)\s+[^>]*?obj="([^"]+)"').allMatches(content);
-          final hasValidDb = dbMatches.any((m) => m.group(1) != '0' && m.group(1)!.isNotEmpty);
-          final hasLnk = content.contains('<LNK ');
-          hasTables = hasValidDb || hasLnk;
-        } catch (_) {
-          hasTables = true;
-        }
+      final scannedPrograms = await Future.wait(
+        files.map((file) async {
+          final filename = file.uri.pathSegments.last;
+          bool hasTables = false;
+          try {
+            final content = await file.readAsString();
+            final dbMatches = RegExp(
+              r'<(?:DB|DataObject)\s+[^>]*?obj="([^"]+)"',
+            ).allMatches(content);
+            final hasValidDb = dbMatches.any(
+              (m) => m.group(1) != '0' && m.group(1)!.isNotEmpty,
+            );
+            final hasLnk = content.contains('<LNK ');
+            hasTables = hasValidDb || hasLnk;
+          } catch (_) {
+            hasTables = true;
+          }
 
-        if (existingByFilename.containsKey(filename.toLowerCase())) {
-          return existingByFilename[filename.toLowerCase()]!.copyWith(hasTables: hasTables);
-        } else {
-          final idMatch = RegExp(r'Prg_(\d+)\.xml', caseSensitive: false).firstMatch(filename);
-          final progId = idMatch?.group(1) ?? filename.replaceAll('.xml', '');
-          return ProgramMetadata(
-            id: progId,
-            filename: filename,
-            name: 'Program $progId',
-            parameters: [],
-            hasTables: hasTables,
-          );
-        }
-      }));
+          if (existingByFilename.containsKey(filename.toLowerCase())) {
+            return existingByFilename[filename.toLowerCase()]!.copyWith(
+              hasTables: hasTables,
+            );
+          } else {
+            final idMatch = RegExp(
+              r'Prg_(\d+)\.xml',
+              caseSensitive: false,
+            ).firstMatch(filename);
+            final progId = idMatch?.group(1) ?? filename.replaceAll('.xml', '');
+            return ProgramMetadata(
+              id: progId,
+              filename: filename,
+              name: 'Program $progId',
+              parameters: [],
+              hasTables: hasTables,
+            );
+          }
+        }),
+      );
 
       final orderMap = <String, int>{};
       for (final candidate in [
@@ -177,7 +226,9 @@ class _MainViewState extends State<MainView> {
         if (await f.exists()) {
           try {
             final content = await f.readAsString();
-            final matches = RegExp(r'<Program>\s*<Header\s+[^>]*?id="([^"]+)"').allMatches(content);
+            final matches = RegExp(
+              r'<Program>\s*<Header\s+[^>]*?id="([^"]+)"',
+            ).allMatches(content);
             int idx = 0;
             for (final m in matches) {
               final id = m.group(1)!;
@@ -209,7 +260,13 @@ class _MainViewState extends State<MainView> {
     }
     _filterPrograms(_searchController.text);
     if (_selectedProgramMeta != null) {
-      final newMatch = _schemaService.programs.where((p) => p.filename.toLowerCase() == _selectedProgramMeta!.filename.toLowerCase()).firstOrNull;
+      final newMatch = _schemaService.programs
+          .where(
+            (p) =>
+                p.filename.toLowerCase() ==
+                _selectedProgramMeta!.filename.toLowerCase(),
+          )
+          .firstOrNull;
       if (newMatch != null) {
         await _selectProgram(newMatch);
       }
@@ -222,11 +279,14 @@ class _MainViewState extends State<MainView> {
       setState(() => _filteredPrograms = _schemaService.programs.toList());
     } else {
       final q = query.toLowerCase();
-      final results = _schemaService.programs.where((p) =>
-        p.id.toLowerCase().contains(q) ||
-        p.name.toLowerCase().contains(q) ||
-        p.filename.toLowerCase().contains(q)
-      ).toList();
+      final results = _schemaService.programs
+          .where(
+            (p) =>
+                p.id.toLowerCase().contains(q) ||
+                p.name.toLowerCase().contains(q) ||
+                p.filename.toLowerCase().contains(q),
+          )
+          .toList();
       setState(() => _filteredPrograms = results);
     }
   }
@@ -237,9 +297,12 @@ class _MainViewState extends State<MainView> {
       _activeParameters = meta.parameters.map((p) => p.copyWith()).toList();
       _paramControllers.clear();
       for (final p in _activeParameters) {
-        _paramControllers[p.fieldId] = TextEditingController(text: p.currentValue);
+        _paramControllers[p.fieldId] = TextEditingController(
+          text: p.currentValue,
+        );
       }
-      _generatedSql = '-- Parsing ${meta.filename}...\n-- Click Generate SQL to build the MSSQL query.';
+      _generatedSql =
+          '-- Parsing ${meta.filename}...\n-- Click Generate SQL to build the MSSQL query.';
     });
 
     final filePath = '$_sourceDirectory/${meta.filename}';
@@ -261,7 +324,8 @@ class _MainViewState extends State<MainView> {
 
         final combinedParams = <String, ProgramParameter>{};
         for (final p in meta.parameters) {
-          combinedParams[p.fieldId.isNotEmpty ? p.fieldId : p.name] = p.copyWith();
+          combinedParams[p.fieldId.isNotEmpty ? p.fieldId : p.name] = p
+              .copyWith();
         }
         for (final p in parsed.extractedParameters) {
           final key = p.fieldId.isNotEmpty ? p.fieldId : p.name;
@@ -275,13 +339,15 @@ class _MainViewState extends State<MainView> {
           final nameLower = p.name.toLowerCase();
           final fieldLower = 'param_${p.fieldId}'.toLowerCase();
           final varLower = 'var_${p.colId}'.toLowerCase();
-          
+
           bool isUsed = false;
           for (final expr in usedExpressions) {
             if (expr.contains('@$nameLower') ||
                 expr.contains('@$fieldLower') ||
                 expr.contains('@$varLower') ||
-                RegExp(r'\b' + RegExp.escape(nameLower) + r'\b').hasMatch(expr)) {
+                RegExp(
+                  r'\b' + RegExp.escape(nameLower) + r'\b',
+                ).hasMatch(expr)) {
               isUsed = true;
               break;
             }
@@ -294,7 +360,9 @@ class _MainViewState extends State<MainView> {
         _activeParameters = relevantParams;
         _paramControllers.clear();
         for (final p in _activeParameters) {
-          _paramControllers[p.fieldId] = TextEditingController(text: p.currentValue);
+          _paramControllers[p.fieldId] = TextEditingController(
+            text: p.currentValue,
+          );
         }
 
         _generateSql();
@@ -308,7 +376,8 @@ class _MainViewState extends State<MainView> {
     if (_parsedProgram == null) return;
     if (!_canGenerate) {
       setState(() {
-        _generatedSql = '-- No database tables present in this program.\n-- Nothing to generate.';
+        _generatedSql =
+            '-- No database tables present in this program.\n-- Nothing to generate.';
       });
       return;
     }
@@ -334,6 +403,7 @@ class _MainViewState extends State<MainView> {
   }
 
   void _copyToClipboard() {
+    final colors = AppColors.of(context);
     Clipboard.setData(ClipboardData(text: _generatedSql));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -344,7 +414,7 @@ class _MainViewState extends State<MainView> {
             Text('MSSQL Query copied to clipboard!'),
           ],
         ),
-        backgroundColor: const Color(0xFF1E293B),
+        backgroundColor: colors.snackbarBg,
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
       ),
@@ -353,10 +423,11 @@ class _MainViewState extends State<MainView> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFF0B0F19),
+      backgroundColor: colors.scaffoldBg,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF06B6D4)))
+          ? Center(child: CircularProgressIndicator(color: colors.accent))
           : Column(
               children: [
                 _buildHeader(),
@@ -364,9 +435,9 @@ class _MainViewState extends State<MainView> {
                   child: Row(
                     children: [
                       _buildProgramListPanel(),
-                      Container(width: 1, color: const Color(0xFF1E293B)),
+                      Container(width: 1, color: colors.border),
                       _buildParametersPanel(),
-                      Container(width: 1, color: const Color(0xFF1E293B)),
+                      Container(width: 1, color: colors.border),
                       Expanded(child: _buildRightPanel()),
                     ],
                   ),
@@ -377,54 +448,71 @@ class _MainViewState extends State<MainView> {
   }
 
   Widget _buildHeader() {
+    final colors = AppColors.of(context);
     return Container(
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: const BoxDecoration(
-        color: Color(0xFF111827),
-        border: Border(bottom: BorderSide(color: Color(0xFF1E293B))),
+      decoration: BoxDecoration(
+        color: colors.headerBg,
+        border: Border(bottom: BorderSide(color: colors.border)),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)]),
+              gradient: const LinearGradient(
+                colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
+              ),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(Icons.data_object, color: Colors.white, size: 20),
           ),
           const SizedBox(width: 12),
           Text(
-            'UniPaas to MSSQL Studio',
+            'SQL Generator',
             style: GoogleFonts.outfit(
-              color: Colors.white,
+              color: colors.textPrimary,
               fontSize: 20,
               fontWeight: FontWeight.w600,
             ),
           ),
-          const Spacer(),
-          InkWell(
-            onTap: _changeSourceDirectory,
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E293B),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF38BDF8)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.folder_open, color: Color(0xFF38BDF8), size: 16),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Source: $_sourceDirectory',
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(width: 6),
-                  const Icon(Icons.edit, color: Color(0xFF38BDF8), size: 14),
-                ],
+          const SizedBox(width: 16),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 500),
+            child: InkWell(
+              onTap: _changeSourceDirectory,
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: colors.cardBg,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: colors.accentIcon),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.folder_open, color: colors.accentIcon, size: 16),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Source: $_sourceDirectory',
+                        style: GoogleFonts.inter(
+                          color: colors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(Icons.edit, color: colors.accentIcon, size: 14),
+                  ],
+                ),
               ),
             ),
           ),
@@ -432,14 +520,33 @@ class _MainViewState extends State<MainView> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF064E3B).withValues(alpha: 0.4),
+              color: colors.successBg.withValues(
+                alpha: colors.isDark ? 0.4 : 1.0,
+              ),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFF059669)),
+              border: Border.all(color: colors.successBorder),
             ),
             child: Text(
               '${_schemaService.programs.length} Programs Ready',
-              style: GoogleFonts.inter(color: const Color(0xFF34D399), fontSize: 12, fontWeight: FontWeight.w500),
+              style: GoogleFonts.inter(
+                color: colors.successText,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
+          ),
+          const Spacer(),
+          // Theme toggle button
+          IconButton(
+            onPressed: widget.onToggleTheme,
+            icon: Icon(
+              colors.isDark ? Icons.light_mode : Icons.dark_mode,
+              color: colors.textSecondary,
+              size: 20,
+            ),
+            tooltip: colors.isDark
+                ? 'Switch to Light Mode'
+                : 'Switch to Dark Mode',
           ),
         ],
       ),
@@ -447,9 +554,10 @@ class _MainViewState extends State<MainView> {
   }
 
   Widget _buildProgramListPanel() {
+    final colors = AppColors.of(context);
     return Container(
       width: 280,
-      color: const Color(0xFF0F172A),
+      color: colors.panelBg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -458,19 +566,29 @@ class _MainViewState extends State<MainView> {
             child: TextField(
               controller: _searchController,
               onChanged: _filterPrograms,
-              style: GoogleFonts.inter(color: Colors.white, fontSize: 13),
+              style: GoogleFonts.inter(color: colors.textPrimary, fontSize: 13),
               decoration: InputDecoration(
                 hintText: 'Search programs...',
-                hintStyle: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 13),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF64748B), size: 18),
+                hintStyle: GoogleFonts.inter(
+                  color: colors.textMuted,
+                  fontSize: 13,
+                ),
+                prefixIcon: Icon(
+                  Icons.search,
+                  color: colors.textMuted,
+                  size: 18,
+                ),
                 filled: true,
-                fillColor: const Color(0xFF1E293B),
+                fillColor: colors.cardBg,
                 isDense: true,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
               ),
             ),
           ),
@@ -478,7 +596,11 @@ class _MainViewState extends State<MainView> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Text(
               'PROGRAM LIST (${_filteredPrograms.length})',
-              style: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.bold),
+              style: GoogleFonts.inter(
+                color: colors.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           const SizedBox(height: 6),
@@ -490,33 +612,50 @@ class _MainViewState extends State<MainView> {
                 final prog = _filteredPrograms[index];
                 final isSelected = _selectedProgramMeta?.id == prog.id;
                 final isDisabled = !prog.hasTables;
-                final repoIdx = _schemaService.programs.indexWhere((p) => p.id == prog.id);
-                final displayIndex = (repoIdx >= 0 ? repoIdx + 1 : index + 1).toString();
+                final repoIdx = _schemaService.programs.indexWhere(
+                  (p) => p.id == prog.id,
+                );
+                final displayIndex = (repoIdx >= 0 ? repoIdx + 1 : index + 1)
+                    .toString();
                 return InkWell(
                   onTap: isDisabled ? null : () => _selectProgram(prog),
                   borderRadius: BorderRadius.circular(6),
                   child: Container(
                     margin: const EdgeInsets.symmetric(vertical: 1),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFF1E293B) : Colors.transparent,
+                      color: isSelected
+                          ? colors.selectedBg
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(6),
-                      border: isSelected ? Border.all(color: const Color(0xFF06B6D4)) : null,
+                      border: isSelected
+                          ? Border.all(color: colors.selectedBorder)
+                          : null,
                     ),
                     child: Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: isDisabled
-                                ? const Color(0xFF1E293B)
-                                : (isSelected ? const Color(0xFF06B6D4) : const Color(0xFF334155)),
+                                ? colors.cardBg
+                                : (isSelected
+                                      ? colors.accent
+                                      : colors.borderSubtle),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             displayIndex,
                             style: GoogleFonts.inter(
-                              color: isDisabled ? const Color(0xFF64748B) : Colors.white,
+                              color: isDisabled
+                                  ? colors.textMuted
+                                  : colors.textOnAccent,
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                             ),
@@ -532,10 +671,16 @@ class _MainViewState extends State<MainView> {
                                 prog.name,
                                 style: GoogleFonts.inter(
                                   color: isDisabled
-                                      ? const Color(0xFF475569)
-                                      : (isSelected ? Colors.white : const Color(0xFFE2E8F0)),
+                                      ? colors.inputHint
+                                      : (isSelected
+                                            ? colors.textPrimary
+                                            : (colors.isDark
+                                                  ? const Color(0xFFE2E8F0)
+                                                  : colors.textPrimary)),
                                   fontSize: 12,
-                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -545,8 +690,10 @@ class _MainViewState extends State<MainView> {
                                 prog.filename,
                                 style: GoogleFonts.inter(
                                   color: isDisabled
-                                      ? const Color(0xFF334155)
-                                      : (isSelected ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                                      ? colors.borderSubtle
+                                      : (isSelected
+                                            ? colors.textSecondary
+                                            : colors.textMuted),
                                   fontSize: 10,
                                 ),
                                 maxLines: 1,
@@ -557,15 +704,28 @@ class _MainViewState extends State<MainView> {
                         ),
                         if (isDisabled)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF1E293B),
+                              color: colors.cardBg,
                               borderRadius: BorderRadius.circular(3),
                             ),
-                            child: Text('NO TABLES', style: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 9)),
+                            child: Text(
+                              'NO TABLES',
+                              style: GoogleFonts.inter(
+                                color: colors.textMuted,
+                                fontSize: 9,
+                              ),
+                            ),
                           )
                         else
-                          const Icon(Icons.chevron_right, color: Color(0xFF64748B), size: 14),
+                          Icon(
+                            Icons.chevron_right,
+                            color: colors.textMuted,
+                            size: 14,
+                          ),
                       ],
                     ),
                   ),
@@ -579,9 +739,10 @@ class _MainViewState extends State<MainView> {
   }
 
   Widget _buildParametersPanel() {
+    final colors = AppColors.of(context);
     return Container(
       width: 310,
-      color: const Color(0xFF0F172A),
+      color: colors.panelBg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -589,20 +750,28 @@ class _MainViewState extends State<MainView> {
             height: 48,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             alignment: Alignment.centerLeft,
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFF1E293B))),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: colors.border)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   'INPUT PARAMETERS & VARS',
-                  style: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 11, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.inter(
+                    color: colors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 if (_activeParameters.isNotEmpty)
                   Text(
                     '${_activeParameters.length}',
-                    style: GoogleFonts.inter(color: const Color(0xFF38BDF8), fontSize: 11, fontWeight: FontWeight.bold),
+                    style: GoogleFonts.inter(
+                      color: colors.accentIcon,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
               ],
             ),
@@ -617,9 +786,12 @@ class _MainViewState extends State<MainView> {
                         _selectedProgramMeta == null
                             ? 'Select a program to configure parameters'
                             : (!_canGenerate
-                                ? 'No database tables present in this program.\nNothing to generate.'
-                                : 'No parameters used in range/locate for this program'),
-                        style: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 12),
+                                  ? 'No database tables present in this program.\nNothing to generate.'
+                                  : 'No parameters used in range/locate for this program'),
+                        style: GoogleFonts.inter(
+                          color: colors.textMuted,
+                          fontSize: 12,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -640,22 +812,48 @@ class _MainViewState extends State<MainView> {
                                 Expanded(
                                   child: Text(
                                     param.name,
-                                    style: GoogleFonts.inter(color: const Color(0xFFE2E8F0), fontSize: 12, fontWeight: FontWeight.w500),
+                                    style: GoogleFonts.inter(
+                                      color: colors.isDark
+                                          ? const Color(0xFFE2E8F0)
+                                          : colors.textPrimary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 const SizedBox(width: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: param.isParameter ? const Color(0xFF3B82F6).withValues(alpha: 0.2) : const Color(0xFF475569).withValues(alpha: 0.2),
+                                    color: param.isParameter
+                                        ? colors.paramBadgeBg.withValues(
+                                            alpha: 0.2,
+                                          )
+                                        : colors.varBadgeBg.withValues(
+                                            alpha: 0.2,
+                                          ),
                                     borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: param.isParameter ? const Color(0xFF3B82F6) : const Color(0xFF475569)),
+                                    border: Border.all(
+                                      color: param.isParameter
+                                          ? colors.paramBadgeBorder
+                                          : colors.varBadgeBorder,
+                                    ),
                                   ),
                                   child: Text(
-                                    param.isParameter ? 'PARAM (${param.type})' : 'VAR (${param.type})',
-                                    style: GoogleFonts.inter(color: param.isParameter ? const Color(0xFF60A5FA) : const Color(0xFF94A3B8), fontSize: 9),
+                                    param.isParameter
+                                        ? 'PARAM (${param.type})'
+                                        : 'VAR (${param.type})',
+                                    style: GoogleFonts.inter(
+                                      color: param.isParameter
+                                          ? colors.paramBadgeText
+                                          : colors.varBadgeText,
+                                      fontSize: 9,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -666,21 +864,32 @@ class _MainViewState extends State<MainView> {
                               onChanged: (val) {
                                 param.currentValue = val;
                               },
-                              style: GoogleFonts.inter(color: Colors.white, fontSize: 12),
+                              style: GoogleFonts.inter(
+                                color: colors.textPrimary,
+                                fontSize: 12,
+                              ),
                               decoration: InputDecoration(
                                 hintText: 'Enter value...',
-                                hintStyle: GoogleFonts.inter(color: const Color(0xFF475569), fontSize: 11),
+                                hintStyle: GoogleFonts.inter(
+                                  color: colors.inputHint,
+                                  fontSize: 11,
+                                ),
                                 filled: true,
-                                fillColor: const Color(0xFF1E293B),
+                                fillColor: colors.inputBg,
                                 isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(6),
                                   borderSide: BorderSide.none,
                                 ),
                                 focusedBorder: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(6),
-                                  borderSide: const BorderSide(color: Color(0xFF06B6D4)),
+                                  borderSide: BorderSide(
+                                    color: colors.inputFocusBorder,
+                                  ),
                                 ),
                               ),
                             ),
@@ -696,26 +905,37 @@ class _MainViewState extends State<MainView> {
   }
 
   Widget _buildRightPanel() {
+    final colors = AppColors.of(context);
     return Column(
       children: [
         Container(
           height: 56,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: const BoxDecoration(
-            color: Color(0xFF111827),
-            border: Border(bottom: BorderSide(color: Color(0xFF1E293B))),
+          decoration: BoxDecoration(
+            color: colors.headerBg,
+            border: Border(bottom: BorderSide(color: colors.border)),
           ),
           child: Row(
             children: [
               Text(
                 'MSSQL QUERY OUTPUT',
-                style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12, fontWeight: FontWeight.bold),
+                style: GoogleFonts.inter(
+                  color: colors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               if (_parsedProgram != null) ...[
                 const SizedBox(width: 12),
-                _buildStatPill('Tasks: ${_parsedProgram!.tasks.length}', Colors.cyanAccent),
+                _buildStatPill(
+                  'Tasks: ${_parsedProgram!.tasks.length}',
+                  Colors.cyanAccent,
+                ),
                 const SizedBox(width: 6),
-                _buildStatPill('Joins: ${_parsedProgram!.tasks.fold(0, (sum, t) => sum + t.joins.length)}', Colors.purpleAccent),
+                _buildStatPill(
+                  'Joins: ${_parsedProgram!.tasks.fold(0, (sum, t) => sum + t.joins.length)}',
+                  Colors.purpleAccent,
+                ),
               ],
               const SizedBox(width: 12),
               Expanded(
@@ -726,64 +946,126 @@ class _MainViewState extends State<MainView> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('Output Mode:', style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12)),
+                        Text(
+                          'Output Mode:',
+                          style: GoogleFonts.inter(
+                            color: colors.textSecondary,
+                            fontSize: 12,
+                          ),
+                        ),
                         const SizedBox(width: 8),
                         ChoiceChip(
-                          label: Text('@Parameterized', style: GoogleFonts.inter(fontSize: 12, color: !_injectValues ? Colors.white : const Color(0xFF94A3B8))),
+                          label: Text(
+                            '@Parameterized',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: !_injectValues
+                                  ? colors.textOnAccent
+                                  : colors.textSecondary,
+                            ),
+                          ),
                           selected: !_injectValues,
-                          selectedColor: const Color(0xFF3B82F6),
-                          backgroundColor: const Color(0xFF1E293B),
-                          onSelected: _canGenerate ? (val) {
-                            setState(() {
-                              _injectValues = false;
-                              _generateSql();
-                            });
-                          } : null,
+                          selectedColor: colors.accentSecondary,
+                          backgroundColor: colors.chipBg,
+                          onSelected: _canGenerate
+                              ? (val) {
+                                  setState(() {
+                                    _injectValues = false;
+                                    _generateSql();
+                                  });
+                                }
+                              : null,
                         ),
                         const SizedBox(width: 6),
                         ChoiceChip(
-                          label: Text('Injected Literals', style: GoogleFonts.inter(fontSize: 12, color: _injectValues ? Colors.white : const Color(0xFF94A3B8))),
+                          label: Text(
+                            'Injected Literals',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: _injectValues
+                                  ? colors.textOnAccent
+                                  : colors.textSecondary,
+                            ),
+                          ),
                           selected: _injectValues,
-                          selectedColor: const Color(0xFF06B6D4),
-                          backgroundColor: const Color(0xFF1E293B),
-                          onSelected: _canGenerate ? (val) {
-                            setState(() {
-                              _injectValues = true;
-                              _generateSql();
-                            });
-                          } : null,
+                          selectedColor: colors.accent,
+                          backgroundColor: colors.chipBg,
+                          onSelected: _canGenerate
+                              ? (val) {
+                                  setState(() {
+                                    _injectValues = true;
+                                    _generateSql();
+                                  });
+                                }
+                              : null,
                         ),
                         const SizedBox(width: 16),
                         ElevatedButton.icon(
                           onPressed: _canGenerate ? _generateSql : null,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF06B6D4),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ).copyWith(
-                            backgroundColor: WidgetStateProperty.resolveWith((states) {
-                              if (states.contains(WidgetState.disabled)) return const Color(0xFF1E293B);
-                              return const Color(0xFF06B6D4);
-                            }),
-                          ),
+                          style:
+                              ElevatedButton.styleFrom(
+                                backgroundColor: colors.accent,
+                                foregroundColor: colors.textOnAccent,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 10,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ).copyWith(
+                                backgroundColor:
+                                    WidgetStateProperty.resolveWith((states) {
+                                      if (states.contains(WidgetState.disabled))
+                                        return colors.disabledBg;
+                                      return colors.accent;
+                                    }),
+                              ),
                           icon: _isGenerating
-                              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
                               : const Icon(Icons.bolt, size: 16),
-                          label: Text('Generate SQL', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600)),
+                          label: Text(
+                            'Generate SQL',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton.icon(
-                          onPressed: (_canGenerate && _generatedSql.isNotEmpty && !_generatedSql.startsWith('-- No database tables')) ? _copyToClipboard : null,
+                          onPressed:
+                              (_canGenerate &&
+                                  _generatedSql.isNotEmpty &&
+                                  !_generatedSql.startsWith(
+                                    '-- No database tables',
+                                  ))
+                              ? _copyToClipboard
+                              : null,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1E293B),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            side: const BorderSide(color: Color(0xFF334155)),
+                            backgroundColor: colors.cardBg,
+                            foregroundColor: colors.textPrimary,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            side: BorderSide(color: colors.borderSubtle),
                           ),
                           icon: const Icon(Icons.copy, size: 16),
-                          label: Text('Copy SQL', style: GoogleFonts.inter(fontSize: 13)),
+                          label: Text(
+                            'Copy SQL',
+                            style: GoogleFonts.inter(fontSize: 13),
+                          ),
                         ),
                       ],
                     ),
@@ -797,12 +1079,12 @@ class _MainViewState extends State<MainView> {
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.all(24),
-            color: const Color(0xFF0B0F19),
+            color: colors.codeBg,
             child: SingleChildScrollView(
               child: SelectableText(
                 _generatedSql,
                 style: GoogleFonts.firaCode(
-                  color: const Color(0xFF38BDF8),
+                  color: colors.sqlText,
                   fontSize: 13,
                   height: 1.5,
                 ),
@@ -824,7 +1106,11 @@ class _MainViewState extends State<MainView> {
       ),
       child: Text(
         text,
-        style: GoogleFonts.inter(color: color, fontSize: 11, fontWeight: FontWeight.w600),
+        style: GoogleFonts.inter(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
