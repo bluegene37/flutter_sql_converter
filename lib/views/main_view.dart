@@ -110,14 +110,22 @@ class _MainViewState extends State<MainView> {
             const SizedBox(height: 12),
             ElevatedButton.icon(
               onPressed: () async {
-                final dir = await FilePicker.getDirectoryPath(
-                  dialogTitle: 'Select UniPaas XML Source Folder',
-                  initialDirectory: controller.text.isNotEmpty
-                      ? controller.text
-                      : null,
-                );
-                if (dir != null) {
-                  controller.text = dir;
+                try {
+                  final dir = await FilePicker.getDirectoryPath(
+                    dialogTitle: 'Select UniPaas XML Source Folder',
+                    initialDirectory: controller.text.isNotEmpty
+                        ? controller.text
+                        : null,
+                  );
+                  if (dir != null) {
+                    controller.text = dir;
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(this.context).showSnackBar(
+                      SnackBar(content: Text('Browse folder error: $e')),
+                    );
+                  }
                 }
               },
               icon: const Icon(Icons.folder_open, size: 16),
