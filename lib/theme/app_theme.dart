@@ -56,6 +56,7 @@ class AppColors {
 
   // Snackbar
   final Color snackbarBg;
+  final Color snackbarText;
 
   const AppColors._({
     required this.brightness,
@@ -92,6 +93,7 @@ class AppColors {
     required this.inputHint,
     required this.inputFocusBorder,
     required this.snackbarBg,
+    required this.snackbarText,
   });
 
   bool get isDark => brightness == Brightness.dark;
@@ -121,16 +123,17 @@ class AppColors {
     hoverBg: Color(0xFF334155),
     chipBg: Color(0xFF1E293B),
     disabledBg: Color(0xFF1E293B),
-    paramBadgeBg: Color(0xFF3B82F6),
-    paramBadgeBorder: Color(0xFF3B82F6),
-    paramBadgeText: Color(0xFF60A5FA),
-    varBadgeBg: Color(0xFF475569),
+    paramBadgeBg: Color(0xFF1E3A8A),
+    paramBadgeBorder: Color(0xFF2563EB),
+    paramBadgeText: Color(0xFF93C5FD),
+    varBadgeBg: Color(0xFF334155),
     varBadgeBorder: Color(0xFF475569),
-    varBadgeText: Color(0xFF94A3B8),
+    varBadgeText: Color(0xFFCBD5E1),
     inputBg: Color(0xFF1E293B),
     inputHint: Color(0xFF475569),
     inputFocusBorder: Color(0xFF06B6D4),
     snackbarBg: Color(0xFF1E293B),
+    snackbarText: Colors.white,
   );
 
   static const light = AppColors._(
@@ -158,16 +161,17 @@ class AppColors {
     hoverBg: Color(0xFFE2E8F0),
     chipBg: Color(0xFFE2E8F0),
     disabledBg: Color(0xFFE2E8F0),
-    paramBadgeBg: Color(0xFF2563EB),
-    paramBadgeBorder: Color(0xFF2563EB),
-    paramBadgeText: Color(0xFF1D4ED8),
-    varBadgeBg: Color(0xFF94A3B8),
-    varBadgeBorder: Color(0xFF94A3B8),
-    varBadgeText: Color(0xFF64748B),
+    paramBadgeBg: Color(0xFFDBEAFE),
+    paramBadgeBorder: Color(0xFF93C5FD),
+    paramBadgeText: Color(0xFF1E40AF),
+    varBadgeBg: Color(0xFFF1F5F9),
+    varBadgeBorder: Color(0xFFCBD5E1),
+    varBadgeText: Color(0xFF475569),
     inputBg: Color(0xFFFFFFFF),
     inputHint: Color(0xFF94A3B8),
     inputFocusBorder: Color(0xFF0891B2),
-    snackbarBg: Color(0xFF1E293B),
+    snackbarBg: Color(0xFF0F172A),
+    snackbarText: Colors.white,
   );
 
   /// Get the [AppColors] for the current theme brightness.

@@ -143,6 +143,9 @@ class WhereCondition {
 
 class ParsedTask {
   final String taskId;
+  final String taskIsn;
+  final String? parentTaskId;
+  final int level;
   final String description;
   final String mainTableObj;
   final String mainTableName;
@@ -150,9 +153,13 @@ class ParsedTask {
   final List<TableJoin> joins;
   final List<WhereCondition> whereConditions;
   final List<ProgramParameter> parameters;
+  final List<ParsedTask> subTasks;
 
   ParsedTask({
     required this.taskId,
+    this.taskIsn = '1',
+    this.parentTaskId,
+    this.level = 0,
     required this.description,
     required this.mainTableObj,
     required this.mainTableName,
@@ -160,7 +167,18 @@ class ParsedTask {
     required this.joins,
     required this.whereConditions,
     this.parameters = const [],
+    this.subTasks = const [],
   });
+
+  bool get isChild => level > 0 || (parentTaskId != null && parentTaskId!.isNotEmpty);
+
+  List<ParsedTask> get allDescendantsFlattened {
+    final list = <ParsedTask>[this];
+    for (final child in subTasks) {
+      list.addAll(child.allDescendantsFlattened);
+    }
+    return list;
+  }
 }
 
 class ParsedProgram {
@@ -178,7 +196,16 @@ class ParsedProgram {
     this.extractedParameters = const [],
   });
 
+  List<ParsedTask> get allTasksFlattened {
+    final list = <ParsedTask>[];
+    for (final task in tasks) {
+      list.addAll(task.allDescendantsFlattened);
+    }
+    return list;
+  }
+
   bool get hasTables {
-    return tasks.any((t) => (t.mainTableObj.isNotEmpty && t.mainTableObj != '0') || t.joins.isNotEmpty);
+    return allTasksFlattened.any((t) => (t.mainTableObj.isNotEmpty && t.mainTableObj != '0') || t.joins.isNotEmpty);
   }
 }
+

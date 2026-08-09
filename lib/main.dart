@@ -39,6 +39,15 @@ class _UniPaasConverterAppState extends State<UniPaasConverterApp> {
           surface: Color(0xFFFFFFFF),
         ),
         textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: const Color(0xFF0F172A),
+          contentTextStyle: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
@@ -51,6 +60,15 @@ class _UniPaasConverterAppState extends State<UniPaasConverterApp> {
           surface: Color(0xFF111827),
         ),
         textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: const Color(0xFF1E293B),
+          contentTextStyle: GoogleFonts.inter(
+            color: Colors.white,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
         useMaterial3: true,
       ),
       home: MainView(onToggleTheme: _toggleTheme),
