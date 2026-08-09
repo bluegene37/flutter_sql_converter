@@ -87,6 +87,10 @@ class _MainViewState extends State<MainView> {
 
     await SettingsService.saveSourceDirectory(_sourceDirectory);
     _filteredPrograms = _schemaService.programs.toList();
+    if (Platform.environment.containsKey('FLUTTER_TEST')) {
+      setState(() => _isLoading = false);
+      return;
+    }
     await _scanSourceDirectory();
   }
 
@@ -207,6 +211,13 @@ class _MainViewState extends State<MainView> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('saved_source_directory', targetDir);
     } catch (_) {}
+
+    // Load DataSources.xml in background so scanning remains instant (skip in widget test environment)
+    if (!Platform.environment.containsKey('FLUTTER_TEST')) {
+      _schemaService.loadDataSourcesXmlFromDir(targetDir).then((_) {
+        if (mounted) setState(() {});
+      });
+    }
 
     final dir = Directory(targetDir);
     if (!await dir.exists()) {

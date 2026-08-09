@@ -5,9 +5,12 @@ import 'schema_service.dart';
 
 class XmlParserService {
   final SchemaService schemaService;
-  final Map<String, String> _mainProgramFieldMap = {};
+  final Map<String, GlobalVarInfo> _mainProgramGlobals = {};
 
   XmlParserService(this.schemaService);
+
+  Map<String, GlobalVarInfo> get mainProgramGlobals => _mainProgramGlobals;
+  void parseMainProgramGlobals(String xmlString) => _parseMainProgramGlobals(xmlString);
 
   Future<ParsedProgram?> parseProgramFile(String filePath) async {
     final file = File(filePath);
@@ -21,7 +24,7 @@ class XmlParserService {
   }
 
   Future<void> ensureMainProgramLoaded(String sourceDir) async {
-    if (_mainProgramFieldMap.isNotEmpty) return;
+    if (_mainProgramGlobals.isNotEmpty) return;
 
     final dir = Directory(sourceDir);
     if (await dir.exists()) {
@@ -33,7 +36,7 @@ class XmlParserService {
             if (filename == 'prg_1.xml' || filename == 'prg_0001.xml' || filename == 'mainprogram.xml') {
               final xmlString = await entity.readAsString();
               _parseMainProgramGlobals(xmlString);
-              if (_mainProgramFieldMap.isNotEmpty) return;
+              if (_mainProgramGlobals.isNotEmpty) return;
             }
           }
         }
@@ -53,9 +56,50 @@ class XmlParserService {
         try {
           final xmlString = await file.readAsString();
           _parseMainProgramGlobals(xmlString);
-          if (_mainProgramFieldMap.isNotEmpty) break;
+          if (_mainProgramGlobals.isNotEmpty) break;
         } catch (_) {}
       }
+    }
+  }
+
+  String _extractColumnSqlType(XmlElement colNode) {
+    final propList = colNode.findElements('PropertyList').firstOrNull;
+    if (propList == null) return 'NVARCHAR(255)';
+
+    final modelNode = propList.findElements('Model').firstOrNull;
+    final attrObj = modelNode?.getAttribute('attr_obj') ?? '';
+    final picVal = propList.findElements('Picture').firstOrNull?.getAttribute('valUnicode') ?? '';
+    final wholeVal = int.tryParse(propList.findElements('_Whole').firstOrNull?.getAttribute('val') ?? '') ?? 0;
+    final decVal = int.tryParse(propList.findElements('_Dec').firstOrNull?.getAttribute('val') ?? '') ?? 0;
+    final sizeVal = int.tryParse(propList.findElements('Size').firstOrNull?.getAttribute('val') ?? '') ?? 0;
+
+    switch (attrObj.toUpperCase()) {
+      case 'FIELD_NUMERIC':
+        if (decVal > 0) return 'DECIMAL(${wholeVal > 0 ? wholeVal : 18}, $decVal)';
+        if (wholeVal > 9) return 'BIGINT';
+        return 'INT';
+      case 'FIELD_ALPHA':
+      case 'FIELD_UNICODE':
+        int len = 255;
+        if (picVal.isNotEmpty && int.tryParse(picVal) != null) {
+          len = int.parse(picVal);
+        } else if (sizeVal > 0) {
+          len = sizeVal;
+        }
+        if (len > 4000) return 'NVARCHAR(MAX)';
+        return 'NVARCHAR($len)';
+      case 'FIELD_DATE':
+        return 'DATETIME';
+      case 'FIELD_TIME':
+        return 'TIME';
+      case 'FIELD_LOGICAL':
+        return 'BIT';
+      default:
+        if (picVal.isNotEmpty && int.tryParse(picVal) != null) {
+          final len = int.parse(picVal);
+          return len > 4000 ? 'NVARCHAR(MAX)' : 'NVARCHAR($len)';
+        }
+        return 'NVARCHAR(255)';
     }
   }
 
@@ -69,18 +113,25 @@ class XmlParserService {
 
       if (mainTask == null) return;
 
-      final colIdMap = <String, String>{};
-      final colIndexMap = <String, String>{};
+      final colIdMap = <String, GlobalVarInfo>{};
+      final colIndexMap = <String, GlobalVarInfo>{};
       final colNodes = mainTask.findElements('Resource').firstOrNull?.findAllElements('Column');
       if (colNodes != null) {
         int idx = 1;
         for (final col in colNodes) {
           final cId = col.getAttribute('id') ?? '';
-          final cName = col.getAttribute('name') ?? '';
-          if (cName.isNotEmpty) {
-            colIndexMap[idx.toString()] = cName;
+          final rawName = col.getAttribute('name') ?? '';
+          if (rawName.isNotEmpty) {
+            final cleanName = rawName.replaceAll(' ', '_');
+            final sqlType = _extractColumnSqlType(col);
+            final info = GlobalVarInfo(
+              fieldId: cId,
+              name: cleanName,
+              sqlType: sqlType,
+            );
+            colIndexMap[idx.toString()] = info;
             if (cId.isNotEmpty) {
-              colIdMap[cId] = cName;
+              colIdMap[cId] = info;
             }
           }
           idx++;
@@ -96,17 +147,17 @@ class XmlParserService {
           if (selectNode != null) {
             final fieldId = selectNode.getAttribute('FieldID') ?? '';
             final colVal = selectNode.findElements('Column').firstOrNull?.getAttribute('val') ?? '';
-            final matchedName = colIndexMap[colVal] ?? colIdMap[colVal] ?? colIndexMap[fieldId];
-            if (fieldId.isNotEmpty && matchedName != null) {
-              _mainProgramFieldMap[fieldId] = matchedName;
+            final info = colIndexMap[colVal] ?? colIdMap[colVal] ?? colIndexMap[fieldId];
+            if (fieldId.isNotEmpty && info != null) {
+              _mainProgramGlobals[fieldId] = info;
             }
           }
         }
       }
 
-      colIndexMap.forEach((idx, name) {
-        if (!_mainProgramFieldMap.containsKey(idx)) {
-          _mainProgramFieldMap[idx] = name;
+      colIndexMap.forEach((idx, info) {
+        if (!_mainProgramGlobals.containsKey(idx)) {
+          _mainProgramGlobals[idx] = info;
         }
       });
     } catch (e) {
@@ -158,6 +209,7 @@ class XmlParserService {
         name: progName,
         tasks: topTasks,
         extractedParameters: extractedParameters,
+        mainProgramGlobals: Map.from(_mainProgramGlobals),
       );
     } catch (e) {
       // ignore: avoid_print
@@ -208,6 +260,22 @@ class XmlParserService {
         final syn = exp.findElements('ExpSyntax').firstOrNull?.getAttribute('val');
         if (syn != null) {
           expMap[idx.toString()] = syn;
+
+          for (final m in RegExp(r'\{32768\s*,\s*(\d+)\}').allMatches(syn)) {
+            final gId = m.group(1)!;
+            final gInfo = _mainProgramGlobals[gId];
+            if (gInfo != null) {
+              if (!extractedParameters.any((p) => p.name == gInfo.name)) {
+                extractedParameters.add(ProgramParameter(
+                  fieldId: gId,
+                  colId: '',
+                  name: gInfo.name,
+                  type: gInfo.sqlType,
+                  isParameter: true,
+                ));
+              }
+            }
+          }
         }
         idx++;
       }
@@ -215,14 +283,22 @@ class XmlParserService {
 
     // Variable definitions from Resource/Columns
     final varMap = <String, String>{}; // colId or ordinal index -> name
+    final varTypeMap = <String, String>{}; // colId or ordinal index -> sqlType
     final colNodes = taskNode.findElements('Resource').firstOrNull?.findAllElements('Column');
     if (colNodes != null) {
       int idx = 1;
       for (final col in colNodes) {
         final cId = col.getAttribute('id') ?? '';
-        final cName = col.getAttribute('name') ?? 'Var_$idx';
-        if (cId.isNotEmpty) varMap[cId] = cName;
+        final rawName = col.getAttribute('name') ?? 'Var_$idx';
+        final cName = rawName.replaceAll(' ', '_');
+        final cType = _extractColumnSqlType(col);
+
+        if (cId.isNotEmpty) {
+          varMap[cId] = cName;
+          varTypeMap[cId] = cType;
+        }
         varMap[idx.toString()] = cName;
+        varTypeMap[idx.toString()] = cType;
         idx++;
       }
     }
@@ -285,6 +361,7 @@ class XmlParserService {
           final isParam = op.findElements('IsParameter').firstOrNull?.getAttribute('val') == 'Y';
           final rawVarName = varMap[colVal] ?? varMap[fieldId] ?? '';
           final isParamName = rawVarName.startsWith('p_') || rawVarName.startsWith('Param_');
+          final paramType = varTypeMap[colVal] ?? varTypeMap[fieldId] ?? 'NVARCHAR(255)';
 
           if (typeVal == 'V' && colVal.isNotEmpty) {
             final varName = rawVarName.isNotEmpty ? rawVarName : 'Var_$colVal';
@@ -293,7 +370,7 @@ class XmlParserService {
               fieldId: fieldId,
               colId: colVal,
               name: varName,
-              type: 'ALPHA',
+              type: paramType,
               isParameter: isParam || isParamName,
             );
             if (!extractedParameters.any((p) => p.name == varName)) extractedParameters.add(param);
@@ -305,7 +382,7 @@ class XmlParserService {
               fieldId: fieldId,
               colId: colVal,
               name: paramName,
-              type: 'ALPHA',
+              type: paramType,
               isParameter: true,
             );
             if (!extractedParameters.any((p) => p.name == paramName)) extractedParameters.add(param);
@@ -376,7 +453,7 @@ class XmlParserService {
                       fieldId: '',
                       colId: '',
                       name: paramName,
-                      type: 'GLOBAL',
+                      type: 'NVARCHAR(255)',
                       isParameter: true,
                     ));
                   }
@@ -450,8 +527,8 @@ class XmlParserService {
       final refFieldId = match.group(2)!;
 
       if (taskIsn == '32768' || taskIsn == '1') {
-        if (_mainProgramFieldMap.containsKey(refFieldId)) {
-          return '@${_mainProgramFieldMap[refFieldId]}';
+        if (_mainProgramGlobals.containsKey(refFieldId)) {
+          return '@${_mainProgramGlobals[refFieldId]!.name}';
         }
       }
 
@@ -462,8 +539,8 @@ class XmlParserService {
         return '[${refCol.tableName}].[${refCol.colName}]';
       } else if (parentFieldMap.containsKey(refFieldId)) {
         return '@${parentFieldMap[refFieldId]}';
-      } else if (_mainProgramFieldMap.containsKey(refFieldId)) {
-        return '@${_mainProgramFieldMap[refFieldId]}';
+      } else if (_mainProgramGlobals.containsKey(refFieldId)) {
+        return '@${_mainProgramGlobals[refFieldId]!.name}';
       } else {
         return '@Param_$refFieldId';
       }

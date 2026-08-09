@@ -1,3 +1,15 @@
+class GlobalVarInfo {
+  final String fieldId;
+  final String name;
+  final String sqlType;
+
+  GlobalVarInfo({
+    required this.fieldId,
+    required this.name,
+    required this.sqlType,
+  });
+}
+
 class ProgramParameter {
   final String fieldId;
   final String colId;
@@ -187,6 +199,7 @@ class ParsedProgram {
   final String name;
   final List<ParsedTask> tasks;
   final List<ProgramParameter> extractedParameters;
+  final Map<String, GlobalVarInfo> mainProgramGlobals;
 
   ParsedProgram({
     required this.id,
@@ -194,6 +207,7 @@ class ParsedProgram {
     required this.name,
     required this.tasks,
     this.extractedParameters = const [],
+    this.mainProgramGlobals = const {},
   });
 
   List<ParsedTask> get allTasksFlattened {

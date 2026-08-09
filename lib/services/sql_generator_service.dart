@@ -30,14 +30,57 @@ class SqlGeneratorService {
 
     final taskParamNames = targetTasks.expand((t) => t.parameters.map((p) => p.name)).toSet();
 
-    if (!injectValues && parameters.any((p) => p.currentValue.isNotEmpty || p.isParameter)) {
-      final globalParams = parameters.where((p) => (p.isParameter || p.currentValue.isNotEmpty) && !taskParamNames.contains(p.name)).toList();
-      if (globalParams.isNotEmpty) {
+    // Collect all expression references used across targetTasks
+    final usedExprsText = StringBuffer();
+    for (final task in targetTasks) {
+      for (final join in task.joins) {
+        for (final cond in join.conditions) {
+          usedExprsText.write(' ${cond.sourceExpression}');
+        }
+      }
+      for (final cond in task.whereConditions) {
+        usedExprsText.write(' ${cond.valueExpression}');
+      }
+      for (final col in task.columns) {
+        usedExprsText.write(' ${col.initExpression}');
+      }
+    }
+    final allUsedStr = usedExprsText.toString();
+
+    if (!injectValues) {
+      final declaredGlobalNames = <String>{};
+      final globalDeclarations = <String>[];
+
+      // 1. Check parameters list
+      for (final p in parameters) {
+        if (taskParamNames.contains(p.name)) continue;
+        final cleanName = p.name.replaceAll(' ', '_');
+        if (allUsedStr.contains('@${p.name}') || allUsedStr.contains('@$cleanName')) {
+          if (!declaredGlobalNames.contains(cleanName)) {
+            declaredGlobalNames.add(cleanName);
+            final sqlType = _mapToSqlType(p.type);
+            final val = _formatSqlLiteral(p.currentValue, p.type);
+            globalDeclarations.add('DECLARE @$cleanName $sqlType = $val;');
+          }
+        }
+      }
+
+      // 2. Check program.mainProgramGlobals
+      for (final g in program.mainProgramGlobals.values) {
+        if (taskParamNames.contains(g.name)) continue;
+        final cleanName = g.name.replaceAll(' ', '_');
+        if (allUsedStr.contains('@${g.name}') || allUsedStr.contains('@$cleanName')) {
+          if (!declaredGlobalNames.contains(cleanName)) {
+            declaredGlobalNames.add(cleanName);
+            globalDeclarations.add('DECLARE @$cleanName ${g.sqlType} = NULL;');
+          }
+        }
+      }
+
+      if (globalDeclarations.isNotEmpty) {
         buffer.writeln('-- Global Parameter Declarations');
-        for (final p in globalParams) {
-          final sqlType = _mapToSqlType(p.type);
-          final val = _formatSqlLiteral(p.currentValue, p.type);
-          buffer.writeln('DECLARE @${p.name} $sqlType = $val;');
+        for (final decl in globalDeclarations) {
+          buffer.writeln(decl);
         }
         buffer.writeln();
       }
@@ -214,9 +257,22 @@ class SqlGeneratorService {
   }
 
   String _mapToSqlType(String uniType) {
-    switch (uniType.toUpperCase()) {
+    final upper = uniType.trim().toUpperCase();
+    if (upper.startsWith('INT') ||
+        upper.startsWith('BIGINT') ||
+        upper.startsWith('NVARCHAR') ||
+        upper.startsWith('VARCHAR') ||
+        upper.startsWith('DECIMAL') ||
+        upper.startsWith('NUMERIC') ||
+        upper.startsWith('DATETIME') ||
+        upper.startsWith('DATE') ||
+        upper.startsWith('TIME') ||
+        upper.startsWith('BIT')) {
+      return uniType;
+    }
+    switch (upper) {
       case 'NUMERIC':
-        return 'DECIMAL(18, 4)';
+        return 'INT';
       case 'DATE':
         return 'DATETIME';
       case 'TIME':
