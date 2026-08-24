@@ -719,26 +719,25 @@ class _MainViewState extends State<MainView> {
           const SizedBox(width: 18),
 
           // Read-only Folder Path Display
-          Flexible(
+          Expanded(
             child: Container(
-              height: 36,
-              padding: const EdgeInsets.only(left: 10, right: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: colors.panelBg,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: colors.border),
               ),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.folder_outlined, color: colors.accentIcon, size: 16),
+                  Icon(Icons.folder_outlined, color: colors.accentIcon, size: 15),
                   const SizedBox(width: 8),
-                  Flexible(
+                  Expanded(
                     child: Tooltip(
                       message: _sourceDirectory,
-                      child: SelectableText(
+                      child: Text(
                         _sourceDirectory,
                         maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.firaCode(
                           color: colors.textSecondary,
                           fontSize: 12,
@@ -746,34 +745,15 @@ class _MainViewState extends State<MainView> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Tooltip(
                     message: 'Change XML source folder',
                     child: InkWell(
                       onTap: _changeSourceDirectory,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: colors.cardBg,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: colors.borderSubtle),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.folder_open, size: 13, color: colors.accent),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Browse',
-                              style: GoogleFonts.inter(
-                                color: colors.textPrimary,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
+                      borderRadius: BorderRadius.circular(5),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                        child: Icon(Icons.folder_open, size: 15, color: colors.accent),
                       ),
                     ),
                   ),
@@ -786,8 +766,7 @@ class _MainViewState extends State<MainView> {
 
           // Programs Ready Counter
           Container(
-            height: 36,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: colors.successBg.withValues(
                 alpha: colors.isDark ? 0.35 : 1.0,
@@ -801,15 +780,15 @@ class _MainViewState extends State<MainView> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(Icons.check_circle_outline, size: 15, color: colors.successText),
-                const SizedBox(width: 7),
+                Icon(Icons.check_circle_outline, size: 14, color: colors.successText),
+                const SizedBox(width: 6),
                 Text(
                   _isLoading
                       ? 'Scanning…'
-                      : '${_formatCount(_schemaService.programs.length)} Programs Ready',
+                      : '${_formatCount(_schemaService.programs.length)} programs ready',
                   style: GoogleFonts.inter(
                     color: colors.successText,
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -821,12 +800,12 @@ class _MainViewState extends State<MainView> {
           // Rescan Button
           _HeaderButton(
             icon: Icons.refresh,
-            iconColor: colors.textPrimary,
+            iconColor: colors.textSecondary,
             label: 'Rescan',
             tooltip: 'Rescan XML folder for new or updated files',
             onTap: _isLoading ? null : _rescanAndRefresh,
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
 
           // Theme Toggle - Extreme Right
           _HeaderButton(
@@ -1411,8 +1390,7 @@ class _MainViewState extends State<MainView> {
                     disabledBackgroundColor: colors.disabledBg,
                     disabledForegroundColor: colors.textMuted,
                     elevation: 0,
-                    minimumSize: const Size(0, 36),
-                    padding: EdgeInsets.symmetric(horizontal: showLabels ? 14 : 11),
+                    padding: EdgeInsets.symmetric(horizontal: showLabels ? 14 : 10, vertical: 11),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   icon: _isGenerating
@@ -1496,50 +1474,34 @@ class _MainViewState extends State<MainView> {
   Widget _buildModeToggle(bool showLabels) {
     final colors = AppColors.of(context);
 
-    Widget segment(String text, IconData icon, bool selected, VoidCallback onTap) {
+    Widget segment(String text, bool selected, VoidCallback onTap) {
       return InkWell(
         onTap: _canGenerate ? onTap : null,
         borderRadius: BorderRadius.circular(6),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
           decoration: BoxDecoration(
             color: selected ? colors.accent : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 13,
-                color: selected
-                    ? colors.textOnAccent
-                    : (_canGenerate ? colors.textSecondary : colors.textMuted),
-              ),
-              if (showLabels) ...[
-                const SizedBox(width: 5),
-                Text(
-                  text,
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    color: selected
-                        ? colors.textOnAccent
-                        : (_canGenerate ? colors.textSecondary : colors.textMuted),
-                  ),
-                ),
-              ],
-            ],
+          child: Text(
+            text,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: selected
+                  ? colors.textOnAccent
+                  : (_canGenerate ? colors.textSecondary : colors.textMuted),
+            ),
           ),
         ),
       );
     }
 
     return Tooltip(
-      message: 'Parameters: keeps @variables in the query.\nValues: replaces variables with literal values.',
+      message: 'Params: keeps @variables in the query.\nValues: writes literal values into the query.',
       child: Container(
-        height: 36,
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           color: colors.chipBg,
@@ -1548,16 +1510,15 @@ class _MainViewState extends State<MainView> {
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            segment('Params', Icons.alternate_email, !_injectValues, () {
+            segment(showLabels ? 'Params' : '@', !_injectValues, () {
               setState(() {
                 _injectValues = false;
                 _generateSql();
               });
             }),
             const SizedBox(width: 2),
-            segment('Values', Icons.tag, _injectValues, () {
+            segment(showLabels ? 'Values' : '"', _injectValues, () {
               setState(() {
                 _injectValues = true;
                 _generateSql();
@@ -1768,8 +1729,7 @@ class _HeaderButton extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        height: 36,
-        padding: EdgeInsets.symmetric(horizontal: label == null ? 9 : 12),
+        padding: EdgeInsets.symmetric(horizontal: label == null ? 8 : 11, vertical: 7),
         decoration: BoxDecoration(
           color: colors.cardBg,
           borderRadius: BorderRadius.circular(8),
@@ -1786,16 +1746,12 @@ class _HeaderButton extends StatelessWidget {
             ),
             if (label != null) ...[
               const SizedBox(width: 7),
-              Flexible(
-                child: Text(
-                  label!,
-                  style: GoogleFonts.inter(
-                    color: enabled ? colors.textPrimary : colors.textMuted,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              Text(
+                label!,
+                style: GoogleFonts.inter(
+                  color: enabled ? colors.textPrimary : colors.textMuted,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -1839,8 +1795,7 @@ class _ToolbarButton extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        height: 36,
-        padding: EdgeInsets.symmetric(horizontal: label == null ? 10 : 12),
+        padding: EdgeInsets.symmetric(horizontal: label == null ? 10 : 12, vertical: 7),
         decoration: BoxDecoration(
           color: isActive ? colors.accent.withValues(alpha: 0.15) : colors.cardBg,
           borderRadius: BorderRadius.circular(8),
