@@ -1707,7 +1707,6 @@ class _HeaderButton extends StatelessWidget {
   final IconData icon;
   final Color? iconColor;
   final String? label;
-  final IconData? trailing;
   final String? tooltip;
   final VoidCallback? onTap;
 
@@ -1715,7 +1714,6 @@ class _HeaderButton extends StatelessWidget {
     required this.icon,
     this.iconColor,
     this.label,
-    this.trailing,
     this.tooltip,
     this.onTap,
   });
@@ -1754,10 +1752,6 @@ class _HeaderButton extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
-            ],
-            if (trailing != null) ...[
-              const SizedBox(width: 6),
-              Icon(trailing, size: 14, color: colors.textMuted),
             ],
           ],
         ),
