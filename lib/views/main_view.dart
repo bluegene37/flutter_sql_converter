@@ -762,7 +762,7 @@ class _MainViewState extends State<MainView> {
             ),
           ),
 
-          const Spacer(),
+          const SizedBox(width: 12),
 
           // Programs Ready Counter
           Container(
