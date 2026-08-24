@@ -1,11 +1,14 @@
 import '../models/unipaas_models.dart';
 
 class SqlGeneratorService {
+  /// [programNumber] is the program's position in the list, so task banners can
+  /// be labelled the way uniPaaS Studio labels them: `#12.1`.
   String generateSql({
     required ParsedProgram program,
     required List<ProgramParameter> parameters,
     ParsedTask? selectedTask,
     bool injectValues = false,
+    String programNumber = '',
   }) {
     final buffer = StringBuffer();
 
@@ -14,7 +17,8 @@ class SqlGeneratorService {
     buffer.writeln('-- ============================================================================');
     buffer.writeln('-- Program: ${program.name} (${program.filename})');
     if (selectedTask != null) {
-      buffer.writeln('-- Target Task: Task ISN ${selectedTask.taskIsn} - ${selectedTask.description} (Level ${selectedTask.level})');
+      buffer.writeln('-- Target Task: ${_taskNumber(selectedTask, programNumber)} '
+          '${selectedTask.description} (ISN ${selectedTask.taskIsn}, level ${selectedTask.level})');
     } else {
       buffer.writeln('-- Total Tasks: ${program.allTasksFlattened.length} (${program.tasks.length} Root, ${program.allTasksFlattened.length - program.tasks.length} Child Tasks)');
     }
@@ -45,10 +49,18 @@ class SqlGeneratorService {
         task: task,
         paramMap: paramMap,
         injectValues: injectValues,
+        programNumber: programNumber,
       );
     }
 
     return buffer.toString().trimRight();
+  }
+
+  /// Task number in uniPaaS Studio's dotted form. Without a program number the
+  /// path alone still locates the task inside its file.
+  static String _taskNumber(ParsedTask task, String programNumber) {
+    if (programNumber.isNotEmpty) return task.numberWithin(programNumber);
+    return task.hierarchyPath.isEmpty ? '#main' : '#${task.hierarchyPath}';
   }
 
   // ---------------------------------------------------------------------------
@@ -116,11 +128,14 @@ class SqlGeneratorService {
     required ParsedTask task,
     required Map<String, ProgramParameter> paramMap,
     required bool injectValues,
+    String programNumber = '',
   }) {
-    final label = task.level > 0 ? 'Child Task (Sub-Program)' : 'Main Task';
+    final kind = task.level > 0 ? 'child task' : 'main task';
 
     buffer.writeln('-- ----------------------------------------------------------------------------');
-    buffer.writeln('-- $label ISN #${task.taskIsn}${task.taskId.isNotEmpty ? " (ID: ${task.taskId})" : ""}: ${task.description} [Level ${task.level}]');
+    buffer.writeln('-- Task ${_taskNumber(task, programNumber)}: ${task.description}');
+    buffer.writeln('--   $kind, ISN ${task.taskIsn}'
+        '${task.taskId.isNotEmpty ? ", program ID ${task.taskId}" : ""}, level ${task.level}');
     buffer.writeln('-- ----------------------------------------------------------------------------');
 
     if (!injectValues && task.parameters.isNotEmpty) {
@@ -556,7 +571,11 @@ class SqlGeneratorService {
     return s.length;
   }
 
-  String _mapToSqlType(String uniType) {
+  /// Exposed so the parameter editor can label a value with the same type the
+  /// DECLARE will use.
+  static String sqlTypeFor(String uniType) => _mapToSqlType(uniType);
+
+  static String _mapToSqlType(String uniType) {
     final upper = uniType.trim().toUpperCase();
     if (upper.startsWith('INT') ||
         upper.startsWith('BIGINT') ||
@@ -584,7 +603,7 @@ class SqlGeneratorService {
     }
   }
 
-  String _formatSqlLiteral(String value, String type) {
+  static String _formatSqlLiteral(String value, String type) {
     if (value.isEmpty) return 'NULL';
     final upper = type.trim().toUpperCase();
     if (upper == 'NUMERIC' ||

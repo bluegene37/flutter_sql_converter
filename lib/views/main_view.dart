@@ -10,6 +10,8 @@ import '../services/xml_parser_service.dart';
 import '../services/sql_generator_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/drag_handle.dart';
+import '../widgets/sql_view.dart';
 
 class MainView extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -30,13 +32,24 @@ class _MainViewState extends State<MainView> {
   ProgramMetadata? _selectedProgramMeta;
   ParsedProgram? _parsedProgram;
   ParsedTask? _selectedTask;
-  final Set<String> _expandedProgramIds = {};
   List<ProgramParameter> _activeParameters = [];
   String _generatedSql =
       '-- Select a program from the left panel and click Generate SQL';
   bool _isLoading = true;
   bool _isGenerating = false;
   bool _injectValues = false;
+
+  // Panel geometry. Both side panels are draggable because a fixed width is
+  // wrong for a window that gets resized all day.
+  double _leftWidth = 300;
+  double _rightWidth = 320;
+  bool _paramsOpen = true;
+  bool _hideEmptyPrograms = false;
+
+  /// Task tree under the selected program: whether it is showing, and which
+  /// parents are collapsed (keyed by hierarchy path, e.g. "1.2").
+  bool _treeOpen = true;
+  final Set<String> _collapsedTasks = {};
   final TextEditingController _searchController = TextEditingController();
   final Map<String, TextEditingController> _paramControllers = {};
 
@@ -448,18 +461,32 @@ class _MainViewState extends State<MainView> {
     }
   }
 
+  /// Replaces the editable parameter list, keeping one entry and one text
+  /// controller per name.
+  void _setActiveParameters(List<ProgramParameter> params) {
+    final byName = <String, ProgramParameter>{};
+    for (final p in params) {
+      byName.putIfAbsent(p.name, () => p);
+    }
+    _activeParameters = byName.values.toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    for (final ctrl in _paramControllers.values) {
+      ctrl.dispose();
+    }
+    _paramControllers.clear();
+    for (final p in _activeParameters) {
+      _paramControllers[p.name] = TextEditingController(text: p.currentValue);
+    }
+  }
+
   Future<void> _selectProgram(ProgramMetadata meta, {ParsedTask? targetTask}) async {
     setState(() {
       _selectedProgramMeta = meta;
       _selectedTask = targetTask;
-      _expandedProgramIds.add(meta.id);
-      _activeParameters = meta.parameters.map((p) => p.copyWith()).toList();
-      _paramControllers.clear();
-      for (final p in _activeParameters) {
-        _paramControllers[p.fieldId] = TextEditingController(
-          text: p.currentValue,
-        );
-      }
+      _treeOpen = true;
+      _collapsedTasks.clear();
+      _setActiveParameters(meta.parameters.map((p) => p.copyWith()).toList());
       _generatedSql =
           '-- Parsing ${meta.filename}...\n-- Click Generate SQL to build the MSSQL query.';
     });
@@ -481,16 +508,15 @@ class _MainViewState extends State<MainView> {
           }
         }
 
+        // Keyed by name, because that is what a DECLARE is keyed by: the same
+        // name reached from two different tasks is still one value to fill in.
+        // The parser's version wins since it carries the real SQL type.
         final combinedParams = <String, ProgramParameter>{};
-        for (final p in meta.parameters) {
-          combinedParams[p.fieldId.isNotEmpty ? p.fieldId : p.name] = p
-              .copyWith();
-        }
         for (final p in parsed.extractedParameters) {
-          final key = p.fieldId.isNotEmpty ? p.fieldId : p.name;
-          if (!combinedParams.containsKey(key)) {
-            combinedParams[key] = p.copyWith();
-          }
+          combinedParams.putIfAbsent(p.name, () => p.copyWith());
+        }
+        for (final p in meta.parameters) {
+          combinedParams.putIfAbsent(p.name, () => p.copyWith());
         }
 
         final relevantParams = <ProgramParameter>[];
@@ -516,14 +542,7 @@ class _MainViewState extends State<MainView> {
           }
         }
 
-        _activeParameters = relevantParams;
-        _paramControllers.clear();
-        for (final p in _activeParameters) {
-          _paramControllers[p.fieldId] = TextEditingController(
-            text: p.currentValue,
-          );
-        }
-
+        _setActiveParameters(relevantParams);
         _generateSql();
       } else {
         _generatedSql = '-- Error: Could not parse XML file at $filePath';
@@ -543,7 +562,7 @@ class _MainViewState extends State<MainView> {
     setState(() => _isGenerating = true);
 
     for (final p in _activeParameters) {
-      final ctrl = _paramControllers[p.fieldId];
+      final ctrl = _paramControllers[p.name];
       if (ctrl != null) {
         p.currentValue = ctrl.text.trim();
       }
@@ -554,6 +573,9 @@ class _MainViewState extends State<MainView> {
       parameters: _activeParameters,
       selectedTask: _selectedTask,
       injectValues: _injectValues,
+      programNumber: _selectedProgramMeta == null
+          ? ''
+          : _programNumber(_selectedProgramMeta!, 0),
     );
 
     setState(() {
@@ -588,6 +610,21 @@ class _MainViewState extends State<MainView> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Layout
+  // ---------------------------------------------------------------------------
+
+  /// Programs the list is currently showing, after the search box and the
+  /// "only programs with tables" filter.
+  List<ProgramMetadata> get _visiblePrograms => _hideEmptyPrograms
+      ? _filteredPrograms.where((p) => p.hasTables).toList()
+      : _filteredPrograms;
+
+  /// The parameters inspector earns its space only when there is something to
+  /// fill in, so an empty column never sits between the list and the query.
+  bool get _showParameters =>
+      _paramsOpen && _canGenerate && _activeParameters.isNotEmpty;
+
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
@@ -600,17 +637,40 @@ class _MainViewState extends State<MainView> {
             LinearProgressIndicator(
               color: colors.accent,
               backgroundColor: colors.panelBg,
-              minHeight: 3,
+              minHeight: 2,
             ),
           Expanded(
-            child: Row(
-              children: [
-                _buildProgramListPanel(),
-                Container(width: 1, color: colors.border),
-                _buildParametersPanel(),
-                Container(width: 1, color: colors.border),
-                Expanded(child: _buildRightPanel()),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Leave the query at least half the window however the side
+                // panels are dragged.
+                final maxSide = constraints.maxWidth * 0.5;
+                return Row(
+                  children: [
+                    SizedBox(
+                      width: _leftWidth.clamp(220.0, maxSide),
+                      child: _buildProgramsPanel(),
+                    ),
+                    DragHandle(
+                      onDrag: (dx) => setState(
+                        () => _leftWidth = (_leftWidth + dx).clamp(220.0, maxSide),
+                      ),
+                    ),
+                    Expanded(child: _buildOutputPanel()),
+                    if (_showParameters) ...[
+                      DragHandle(
+                        onDrag: (dx) => setState(
+                          () => _rightWidth = (_rightWidth - dx).clamp(260.0, maxSide),
+                        ),
+                      ),
+                      SizedBox(
+                        width: _rightWidth.clamp(260.0, maxSide),
+                        child: _buildParametersPanel(),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -618,11 +678,17 @@ class _MainViewState extends State<MainView> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Header
+  // ---------------------------------------------------------------------------
+
   Widget _buildHeader() {
     final colors = AppColors.of(context);
+    final folderName = _sourceDirectory.split(Platform.pathSeparator).last;
+
     return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
         color: colors.headerBg,
         border: Border(bottom: BorderSide(color: colors.border)),
@@ -630,148 +696,69 @@ class _MainViewState extends State<MainView> {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            width: 30,
+            height: 30,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
               ),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.data_object, color: Colors.white, size: 20),
+            child: const Icon(Icons.data_object, color: Colors.white, size: 17),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 11),
           Text(
             'SQL Generator',
             style: GoogleFonts.outfit(
               color: colors.textPrimary,
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.w600,
+              letterSpacing: -0.2,
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 350),
-                    child: InkWell(
-                      onTap: _changeSourceDirectory,
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.cardBg,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: colors.accentIcon),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.folder_open, color: colors.accentIcon, size: 16),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(
-                                'Source: $_sourceDirectory',
-                                style: GoogleFonts.inter(
-                                  color: colors.textPrimary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Icon(Icons.edit, color: colors.accentIcon, size: 14),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: colors.successBg.withValues(
-                        alpha: colors.isDark ? 0.4 : 1.0,
-                      ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: colors.successBorder),
-                    ),
-                    child: Text(
-                      '${_schemaService.programs.length} Programs Ready',
-                      style: GoogleFonts.inter(
-                        color: colors.successText,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Tooltip(
-                    message: 'Rescan XML folder for new or updated files',
-                    child: ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _rescanAndRefresh,
-                      icon: const Icon(Icons.refresh, size: 14),
-                      label: Text(
-                        'Rescan XMLs',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: colors.accentSecondary,
-                        foregroundColor: colors.textOnAccent,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+          const SizedBox(width: 20),
+
+          // The folder is identified by its name; the full path is a detail
+          // you ask for, not something to read every time.
+          Flexible(
+            child: Tooltip(
+              message: _sourceDirectory,
+              child: _HeaderButton(
+                icon: Icons.folder_open,
+                iconColor: colors.accentIcon,
+                label: folderName.isEmpty ? 'Choose folder' : folderName,
+                trailing: Icons.unfold_more,
+                onTap: _changeSourceDirectory,
               ),
             ),
           ),
-          const SizedBox(width: 16),
-          // Far right Theme toggle button
+
+          const Spacer(),
+
+          Text(
+            _isLoading
+                ? 'Scanning…'
+                : '${_formatCount(_schemaService.programs.length)} programs',
+            style: GoogleFonts.inter(
+              color: colors.textSecondary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 14),
+          _HeaderButton(
+            icon: Icons.refresh,
+            iconColor: colors.textSecondary,
+            label: 'Rescan',
+            onTap: _isLoading ? null : _rescanAndRefresh,
+          ),
+          const SizedBox(width: 8),
           Tooltip(
-            message: colors.isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
-            child: InkWell(
+            message: colors.isDark ? 'Switch to light mode' : 'Switch to dark mode',
+            child: _HeaderButton(
+              icon: colors.isDark ? Icons.light_mode : Icons.dark_mode,
+              iconColor: colors.isDark ? const Color(0xFFFBBF24) : colors.accent,
               onTap: widget.onToggleTheme,
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: colors.cardBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: colors.borderSubtle),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      colors.isDark ? Icons.light_mode : Icons.dark_mode,
-                      color: colors.isDark ? Colors.amberAccent : colors.accent,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      colors.isDark ? 'Light Mode' : 'Dark Mode',
-                      style: GoogleFonts.inter(
-                        color: colors.textPrimary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
             ),
           ),
         ],
@@ -779,31 +766,50 @@ class _MainViewState extends State<MainView> {
     );
   }
 
-  Widget _buildProgramListPanel() {
+  static String _formatCount(int n) {
+    final s = n.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buffer.write(',');
+      buffer.write(s[i]);
+    }
+    return buffer.toString();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Programs
+  // ---------------------------------------------------------------------------
+
+  Widget _buildProgramsPanel() {
     final colors = AppColors.of(context);
+    final programs = _visiblePrograms;
+
     return Container(
-      width: 280,
       color: colors.panelBg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: TextField(
               controller: _searchController,
               onChanged: _filterPrograms,
               style: GoogleFonts.inter(color: colors.textPrimary, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Search programs...',
-                hintStyle: GoogleFonts.inter(
-                  color: colors.textMuted,
-                  fontSize: 13,
-                ),
-                prefixIcon: Icon(
-                  Icons.search,
-                  color: colors.textMuted,
-                  size: 18,
-                ),
+                hintText: 'Search programs',
+                hintStyle: GoogleFonts.inter(color: colors.textMuted, fontSize: 13),
+                prefixIcon: Icon(Icons.search, color: colors.textMuted, size: 17),
+                prefixIconConstraints: const BoxConstraints(minWidth: 36),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: Icon(Icons.close, size: 15, color: colors.textMuted),
+                        splashRadius: 14,
+                        onPressed: () {
+                          _searchController.clear();
+                          _filterPrograms('');
+                        },
+                      ),
                 filled: true,
                 fillColor: colors.cardBg,
                 isDense: true,
@@ -811,303 +817,94 @@ class _MainViewState extends State<MainView> {
                   borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: colors.inputFocusBorder),
                 ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 11),
               ),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              'PROGRAM LIST (${_filteredPrograms.length})',
-              style: GoogleFonts.inter(
-                color: colors.textMuted,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-              ),
+            padding: const EdgeInsets.fromLTRB(14, 0, 8, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${_formatCount(programs.length)} shown',
+                    style: GoogleFonts.inter(
+                      color: colors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+                Tooltip(
+                  message: _hideEmptyPrograms
+                      ? 'Showing only programs with tables'
+                      : 'Showing every program',
+                  child: InkWell(
+                    onTap: () => setState(() => _hideEmptyPrograms = !_hideEmptyPrograms),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _hideEmptyPrograms
+                                ? Icons.filter_alt
+                                : Icons.filter_alt_outlined,
+                            size: 13,
+                            color: _hideEmptyPrograms ? colors.accent : colors.textMuted,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'With tables',
+                            style: GoogleFonts.inter(
+                              color: _hideEmptyPrograms ? colors.accent : colors.textMuted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
           Expanded(
             child: Stack(
               children: [
-                ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  itemCount: _filteredPrograms.length,
-                  itemBuilder: (context, index) {
-                    final prog = _filteredPrograms[index];
-                    final isSelected = _selectedProgramMeta?.id == prog.id;
-                    final isExpanded = _expandedProgramIds.contains(prog.id);
-                    final isDisabled = !prog.hasTables;
-                    final repoIdx = _schemaService.programs.indexWhere(
-                      (p) => p.id == prog.id,
-                    );
-                    final displayIndex = (repoIdx >= 0 ? repoIdx + 1 : index + 1)
-                        .toString();
-
-                    final currentParsedTasks = (isExpanded && isSelected && _parsedProgram != null)
-                        ? _parsedProgram!.allTasksFlattened
-                        : <ParsedTask>[];
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        InkWell(
-                          onTap: isDisabled
-                              ? null
-                              : () {
-                                  if (_expandedProgramIds.contains(prog.id)) {
-                                    setState(() {
-                                      _expandedProgramIds.remove(prog.id);
-                                    });
-                                  } else {
-                                    setState(() {
-                                      _expandedProgramIds.add(prog.id);
-                                    });
-                                    if (_selectedProgramMeta?.id != prog.id) {
-                                      _selectProgram(prog);
-                                    }
-                                  }
-                                },
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(vertical: 1),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? colors.selectedBg
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(6),
-                              border: isSelected
-                                  ? Border.all(color: colors.selectedBorder)
-                                  : null,
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isDisabled
-                                        ? colors.cardBg
-                                        : (isSelected
-                                              ? colors.accent
-                                              : colors.borderSubtle),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    displayIndex,
-                                    style: GoogleFonts.inter(
-                                      color: isDisabled
-                                          ? colors.textMuted
-                                          : colors.textOnAccent,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        prog.name,
-                                        style: GoogleFonts.inter(
-                                          color: isDisabled
-                                              ? colors.inputHint
-                                              : (isSelected
-                                                    ? colors.textPrimary
-                                                    : (colors.isDark
-                                                          ? const Color(0xFFE2E8F0)
-                                                          : colors.textPrimary)),
-                                          fontSize: 12,
-                                          fontWeight: isSelected
-                                              ? FontWeight.w600
-                                              : FontWeight.w400,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        prog.filename,
-                                        style: GoogleFonts.inter(
-                                          color: isDisabled
-                                              ? colors.borderSubtle
-                                              : (isSelected
-                                                    ? colors.textSecondary
-                                                    : colors.textMuted),
-                                          fontSize: 10,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (isDisabled)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 4,
-                                      vertical: 1,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: colors.cardBg,
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                    child: Text(
-                                      'NO TABLES',
-                                      style: GoogleFonts.inter(
-                                        color: colors.textMuted,
-                                        fontSize: 9,
-                                      ),
-                                    ),
-                                  )
-                                else
-                                  Icon(
-                                    isExpanded ? Icons.keyboard_arrow_down : Icons.chevron_right,
-                                    color: colors.textMuted,
-                                    size: 14,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (isSelected && currentParsedTasks.isNotEmpty)
-                          Container(
-                            margin: const EdgeInsets.only(left: 14, top: 2, bottom: 6),
-                            padding: const EdgeInsets.only(left: 8),
-                            decoration: BoxDecoration(
-                              border: Border(
-                                left: BorderSide(
-                                  color: colors.accent.withValues(alpha: 0.5),
-                                  width: 2,
-                                ),
-                              ),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                InkWell(
-                                  onTap: () {
-                                    setState(() {
-                                      _selectedTask = null;
-                                      _generateSql();
-                                    });
-                                  },
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: _selectedTask == null
-                                          ? colors.accent.withValues(alpha: 0.15)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.list_alt,
-                                          size: 12,
-                                          color: _selectedTask == null ? colors.accent : colors.textMuted,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            'All Tasks (Full Program)',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 11,
-                                              fontWeight: _selectedTask == null ? FontWeight.bold : FontWeight.normal,
-                                              color: _selectedTask == null ? colors.textPrimary : colors.textSecondary,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                                ...currentParsedTasks.map((t) {
-                                  final isTaskSelected = _selectedTask == t;
-                                  final prefixIndent = '  ' * t.level;
-                                  final titleText = '$prefixIndent${t.isChild ? "↳ Sub-Task" : "Main Task"} #${t.taskIsn}: ${t.description}';
-                                  return InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedTask = t;
-                                        _generateSql();
-                                      });
-                                    },
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: Container(
-                                      margin: const EdgeInsets.only(top: 2),
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: isTaskSelected
-                                            ? (t.isChild ? colors.accentSecondary.withValues(alpha: 0.2) : colors.accent.withValues(alpha: 0.2))
-                                            : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: isTaskSelected
-                                            ? Border.all(
-                                                color: t.isChild ? colors.accentSecondary : colors.accent,
-                                                width: 1,
-                                              )
-                                            : null,
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            t.isChild ? Icons.subdirectory_arrow_right : Icons.task_alt,
-                                            size: 11,
-                                            color: isTaskSelected
-                                                ? colors.textPrimary
-                                                : (t.isChild ? Colors.amber : colors.textMuted),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Expanded(
-                                            child: Text(
-                                              titleText,
-                                              style: GoogleFonts.inter(
-                                                fontSize: 11,
-                                                fontWeight: isTaskSelected ? FontWeight.bold : FontWeight.normal,
-                                                color: isTaskSelected ? colors.textPrimary : colors.textSecondary,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                }),
-                              ],
-                            ),
-                          ),
-                      ],
-                    );
-                  },
-                ),
+                if (programs.isEmpty && !_isLoading)
+                  _EmptyState(
+                    icon: Icons.search_off,
+                    title: 'No programs match',
+                    body: _searchController.text.isEmpty
+                        ? 'Pick a different folder to scan.'
+                        : 'Try a shorter search, or clear it to see everything.',
+                  )
+                else
+                  ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                    itemCount: programs.length,
+                    itemBuilder: (context, index) =>
+                        _buildProgramRow(programs[index], index),
+                  ),
                 if (_isLoading)
                   Positioned.fill(
                     child: Container(
-                      color: colors.panelBg.withValues(alpha: 0.8),
+                      color: colors.panelBg.withValues(alpha: 0.85),
                       child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             SizedBox(
-                              width: 24,
-                              height: 24,
+                              width: 22,
+                              height: 22,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
                                 color: colors.accent,
@@ -1115,11 +912,11 @@ class _MainViewState extends State<MainView> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              'Analyzing XMLs...',
+                              'Reading XML files',
                               style: GoogleFonts.inter(
-                                color: colors.textPrimary,
+                                color: colors.textSecondary,
                                 fontSize: 12,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
@@ -1135,445 +932,601 @@ class _MainViewState extends State<MainView> {
     );
   }
 
-  Widget _buildParametersPanel() {
+  /// The program number as shown in the list, which is also the first segment
+  /// of every task number underneath it.
+  String _programNumber(ProgramMetadata prog, int fallbackIndex) {
+    final repoIdx = _schemaService.programs.indexWhere((p) => p.id == prog.id);
+    return (repoIdx >= 0 ? repoIdx + 1 : fallbackIndex + 1).toString();
+  }
+
+  Widget _buildProgramRow(ProgramMetadata prog, int index) {
+    final isSelected = _selectedProgramMeta?.id == prog.id;
+    final showTree = isSelected && _treeOpen && _parsedProgram != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildProgramHeaderRow(prog, index, isSelected),
+        if (showTree) _buildTaskTree(_programNumber(prog, index)),
+      ],
+    );
+  }
+
+  Widget _buildProgramHeaderRow(ProgramMetadata prog, int index, bool isSelected) {
     final colors = AppColors.of(context);
+    final isDisabled = !prog.hasTables;
+    final hasTree = isSelected && (_parsedProgram?.tasks.isNotEmpty ?? false);
+    // Selecting the program means "the whole program", which is also what the
+    // All-tasks output shows.
+    final wholeProgramSelected = isSelected && _selectedTask == null;
+
+    return InkWell(
+      onTap: isDisabled
+          ? null
+          : () {
+              if (isSelected) {
+                setState(() {
+                  _selectedTask = null;
+                  _treeOpen = true;
+                  _generateSql();
+                });
+              } else {
+                _selectProgram(prog);
+              }
+            },
+      borderRadius: BorderRadius.circular(7),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.only(left: 4, right: 8, top: 7, bottom: 7),
+        decoration: BoxDecoration(
+          color: wholeProgramSelected
+              ? colors.selectedBg
+              : (isSelected ? colors.selectedBg.withValues(alpha: 0.45) : Colors.transparent),
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+            color: wholeProgramSelected ? colors.selectedBorder : Colors.transparent,
+          ),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              child: hasTree
+                  ? InkWell(
+                      onTap: () => setState(() => _treeOpen = !_treeOpen),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Icon(
+                        _treeOpen ? Icons.arrow_drop_down : Icons.arrow_right,
+                        size: 18,
+                        color: colors.textSecondary,
+                      ),
+                    )
+                  : null,
+            ),
+            SizedBox(
+              width: 30,
+              child: Text(
+                '#${_programNumber(prog, index)}',
+                textAlign: TextAlign.right,
+                style: GoogleFonts.firaCode(
+                  color: isDisabled
+                      ? colors.textMuted.withValues(alpha: 0.5)
+                      : (isSelected ? colors.accent : colors.textMuted),
+                  fontSize: 10.5,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    prog.name,
+                    style: GoogleFonts.inter(
+                      color: isDisabled
+                          ? colors.textMuted
+                          : (isSelected ? colors.textPrimary : colors.textSecondary),
+                      fontSize: 12.5,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 1),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          prog.filename,
+                          style: GoogleFonts.firaCode(
+                            color: colors.textMuted.withValues(alpha: isDisabled ? 0.5 : 0.85),
+                            fontSize: 9.5,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // The root task below carries the same name and number,
+                      // so say what picking the program itself means.
+                      if (wholeProgramSelected) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '· whole program',
+                          style: GoogleFonts.inter(
+                            color: colors.accent,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (isDisabled)
+              Tooltip(
+                message: 'No database tables, so there is nothing to generate',
+                child: Icon(Icons.block, size: 12, color: colors.textMuted.withValues(alpha: 0.6)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Task tree
+  // ---------------------------------------------------------------------------
+
+  /// Tasks in tree order, skipping anything inside a collapsed parent.
+  List<ParsedTask> _visibleTasks() {
+    final visible = <ParsedTask>[];
+    void walk(ParsedTask task) {
+      visible.add(task);
+      if (_collapsedTasks.contains(task.hierarchyPath)) return;
+      for (final child in task.subTasks) {
+        walk(child);
+      }
+    }
+
+    for (final root in _parsedProgram?.tasks ?? const <ParsedTask>[]) {
+      walk(root);
+    }
+    return visible;
+  }
+
+  Widget _buildTaskTree(String programNumber) {
+    final colors = AppColors.of(context);
+    final tasks = _visibleTasks();
+    final total = _parsedProgram!.allTasksFlattened.length;
+    final anyParents = _parsedProgram!.allTasksFlattened.any((t) => t.hasSubTasks);
+
     return Container(
-      width: 310,
-      color: colors.panelBg,
+      margin: const EdgeInsets.only(left: 13, bottom: 8),
+      padding: const EdgeInsets.only(left: 5),
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(color: colors.accent.withValues(alpha: 0.35), width: 2),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            alignment: Alignment.centerLeft,
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: colors.border)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'INPUT PARAMETERS & VARS',
-                  style: GoogleFonts.inter(
-                    color: colors.textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (_activeParameters.isNotEmpty)
+          if (anyParents)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, top: 2, bottom: 3),
+              child: Row(
+                children: [
                   Text(
-                    '${_activeParameters.length}',
+                    '$total ${total == 1 ? 'task' : 'tasks'}',
                     style: GoogleFonts.inter(
-                      color: colors.accentIcon,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                      color: colors.textMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-              ],
+                  const Spacer(),
+                  _TreeAction(
+                    label: _collapsedTasks.isEmpty ? 'Collapse all' : 'Expand all',
+                    onTap: () => setState(() {
+                      if (_collapsedTasks.isEmpty) {
+                        _collapsedTasks.addAll(_parsedProgram!.allTasksFlattened
+                            .where((t) => t.hasSubTasks)
+                            .map((t) => t.hierarchyPath));
+                      } else {
+                        _collapsedTasks.clear();
+                      }
+                    }),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: (_activeParameters.isEmpty || !_canGenerate)
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(
-                        _selectedProgramMeta == null
-                            ? 'Select a program to configure parameters'
-                            : (!_canGenerate
-                                  ? 'No database tables present in this program.\nNothing to generate.'
-                                  : 'No parameters used in range/locate for this program'),
-                        style: GoogleFonts.inter(
-                          color: colors.textMuted,
-                          fontSize: 12,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    itemCount: _activeParameters.length,
-                    itemBuilder: (context, index) {
-                      final param = _activeParameters[index];
-                      final ctrl = _paramControllers[param.fieldId];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    param.name,
-                                    style: GoogleFonts.inter(
-                                      color: colors.isDark
-                                          ? const Color(0xFFE2E8F0)
-                                          : colors.textPrimary,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: param.isParameter
-                                        ? colors.paramBadgeBg.withValues(
-                                            alpha: 0.2,
-                                          )
-                                        : colors.varBadgeBg.withValues(
-                                            alpha: 0.2,
-                                          ),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: param.isParameter
-                                          ? colors.paramBadgeBorder
-                                          : colors.varBadgeBorder,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    param.isParameter
-                                        ? 'PARAM (${param.type})'
-                                        : 'VAR (${param.type})',
-                                    style: GoogleFonts.inter(
-                                      color: param.isParameter
-                                          ? colors.paramBadgeText
-                                          : colors.varBadgeText,
-                                      fontSize: 9,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            TextField(
-                              controller: ctrl,
-                              onChanged: (val) {
-                                param.currentValue = val;
-                              },
-                              style: GoogleFonts.inter(
-                                color: colors.textPrimary,
-                                fontSize: 12,
-                              ),
-                              decoration: InputDecoration(
-                                hintText: 'Enter value...',
-                                hintStyle: GoogleFonts.inter(
-                                  color: colors.inputHint,
-                                  fontSize: 11,
-                                ),
-                                filled: true,
-                                fillColor: colors.inputBg,
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(6),
-                                  borderSide: BorderSide(
-                                    color: colors.inputFocusBorder,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-          ),
+          for (final task in tasks) _buildTaskRow(task, programNumber),
         ],
       ),
     );
   }
 
-  Widget _buildRightPanel() {
+  Widget _buildTaskRow(ParsedTask task, String programNumber) {
     final colors = AppColors.of(context);
-    final allTasks = _parsedProgram?.allTasksFlattened ?? [];
+    final isSelected = identical(_selectedTask, task);
+    final isCollapsed = _collapsedTasks.contains(task.hierarchyPath);
+    final accent = task.isChild ? colors.accentSecondary : colors.accent;
+
+    return InkWell(
+      onTap: () => setState(() {
+        _selectedTask = task;
+        _generateSql();
+      }),
+      borderRadius: BorderRadius.circular(5),
+      child: Container(
+        margin: EdgeInsets.only(left: task.level * 11.0, bottom: 1),
+        padding: const EdgeInsets.only(right: 6, top: 4, bottom: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? accent.withValues(alpha: 0.18) : Colors.transparent,
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: isSelected ? accent : Colors.transparent),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 16,
+              child: task.hasSubTasks
+                  ? InkWell(
+                      onTap: () => setState(() {
+                        if (isCollapsed) {
+                          _collapsedTasks.remove(task.hierarchyPath);
+                        } else {
+                          _collapsedTasks.add(task.hierarchyPath);
+                        }
+                      }),
+                      borderRadius: BorderRadius.circular(3),
+                      child: Icon(
+                        isCollapsed ? Icons.arrow_right : Icons.arrow_drop_down,
+                        size: 16,
+                        color: colors.textSecondary,
+                      ),
+                    )
+                  : Icon(
+                      Icons.remove,
+                      size: 8,
+                      color: colors.textMuted.withValues(alpha: 0.4),
+                    ),
+            ),
+            const SizedBox(width: 2),
+            Text(
+              task.numberWithin(programNumber),
+              style: GoogleFonts.firaCode(
+                color: isSelected ? accent : colors.textMuted,
+                fontSize: 9.5,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                task.description,
+                style: GoogleFonts.inter(
+                  color: isSelected ? colors.textPrimary : colors.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (isCollapsed && task.subTasks.isNotEmpty) ...[
+              const SizedBox(width: 4),
+              Text(
+                '+${_countDescendants(task)}',
+                style: GoogleFonts.firaCode(color: colors.textMuted, fontSize: 9),
+              ),
+            ],
+            if (!task.hasDataSource) ...[
+              const SizedBox(width: 4),
+              Tooltip(
+                message: 'No data source, so this task produces no SQL',
+                child: Icon(
+                  Icons.remove_circle_outline,
+                  size: 10,
+                  color: colors.textMuted.withValues(alpha: 0.55),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static int _countDescendants(ParsedTask task) =>
+      task.allDescendantsFlattened.length - 1;
+
+  // ---------------------------------------------------------------------------
+  // Output
+  // ---------------------------------------------------------------------------
+
+  Widget _buildOutputPanel() {
+    final colors = AppColors.of(context);
     return Column(
       children: [
-        Container(
+        _buildOutputToolbar(),
+        Expanded(
+          child: _selectedProgramMeta == null
+              ? Container(
+                  color: colors.codeBg,
+                  child: _EmptyState(
+                    icon: Icons.bolt_outlined,
+                    title: 'Choose a program to convert',
+                    body: 'Pick one from the list on the left. Its uniPaaS dataview, '
+                        'links and ranges become a MSSQL query here.',
+                  ),
+                )
+              : SqlView(sql: _generatedSql),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOutputToolbar() {
+    final colors = AppColors.of(context);
+    final allTasks = _parsedProgram?.allTasksFlattened ?? const <ParsedTask>[];
+    final joinCount = allTasks.fold(0, (sum, t) => sum + t.joins.length);
+    final hasOutput = _canGenerate &&
+        _generatedSql.isNotEmpty &&
+        !_generatedSql.startsWith('-- No database tables');
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Under pressure the identity gives up space first, then the counts;
+        // the actions stay put so Generate is never scrolled out of reach.
+        final showStats = constraints.maxWidth > 880 && _parsedProgram != null;
+        final showLabels = constraints.maxWidth > 720;
+
+        return Container(
           height: 56,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: colors.headerBg,
             border: Border(bottom: BorderSide(color: colors.border)),
           ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                Text(
-                  'MSSQL QUERY OUTPUT',
-                  style: GoogleFonts.inter(
-                    color: colors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (_parsedProgram != null) ...[
-                  const SizedBox(width: 12),
-                  _buildStatPill(
-                    'Tasks: ${allTasks.length}',
-                    Colors.cyanAccent,
-                  ),
-                  const SizedBox(width: 6),
-                  _buildStatPill(
-                    'Joins: ${allTasks.fold(0, (sum, t) => sum + t.joins.length)}',
-                    Colors.purpleAccent,
-                  ),
-                ],
-                const SizedBox(width: 16),
-                Text(
-                  'Output Mode:',
-                  style: GoogleFonts.inter(
-                    color: colors.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: Text(
-                    '@Parameterized',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: !_injectValues
-                          ? colors.textOnAccent
-                          : colors.textSecondary,
-                    ),
-                  ),
-                  selected: !_injectValues,
-                  selectedColor: colors.accentSecondary,
-                  backgroundColor: colors.chipBg,
-                  onSelected: _canGenerate
-                      ? (val) {
-                          setState(() {
-                            _injectValues = false;
-                            _generateSql();
-                          });
-                        }
-                      : null,
-                ),
+          child: Row(
+            children: [
+              Flexible(child: _buildIdentity(allTasks)),
+              if (showStats) ...[
+                const SizedBox(width: 14),
+                _StatPill(label: 'tasks', value: allTasks.length, color: colors.statTasks),
                 const SizedBox(width: 6),
-                ChoiceChip(
-                  label: Text(
-                    'Injected Literals',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: _injectValues
-                          ? colors.textOnAccent
-                          : colors.textSecondary,
-                    ),
-                  ),
-                  selected: _injectValues,
-                  selectedColor: colors.accent,
-                  backgroundColor: colors.chipBg,
-                  onSelected: _canGenerate
-                      ? (val) {
-                          setState(() {
-                            _injectValues = true;
-                            _generateSql();
-                          });
-                        }
-                      : null,
-                ),
-                const SizedBox(width: 16),
-                ElevatedButton.icon(
-                  onPressed: _canGenerate ? _generateSql : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: colors.accent,
-                    foregroundColor: colors.textOnAccent,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ).copyWith(
-                    backgroundColor:
-                        WidgetStateProperty.resolveWith((states) {
-                      if (states.contains(WidgetState.disabled)) {
-                        return colors.disabledBg;
-                      }
-                      return colors.accent;
-                    }),
-                  ),
-                  icon: _isGenerating
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Icon(Icons.bolt, size: 16),
-                  label: Text(
-                    'Generate SQL',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                _StatPill(label: 'joins', value: joinCount, color: colors.statJoins),
+              ],
+              const Spacer(),
+              if (_canGenerate && _activeParameters.isNotEmpty && !_paramsOpen) ...[
+                _ToolbarButton(
+                  icon: Icons.tune,
+                  label: showLabels ? '${_activeParameters.length} parameters' : null,
+                  onTap: () => setState(() => _paramsOpen = true),
                 ),
                 const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: (_canGenerate &&
-                          _generatedSql.isNotEmpty &&
-                          !_generatedSql.startsWith(
-                            '-- No database tables',
-                          ))
-                      ? _copyToClipboard
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: colors.cardBg,
-                    foregroundColor: colors.textPrimary,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    side: BorderSide(color: colors.borderSubtle),
-                  ),
-                  icon: const Icon(Icons.copy, size: 16),
-                  label: Text(
-                    'Copy SQL',
-                    style: GoogleFonts.inter(fontSize: 13),
-                  ),
-                ),
               ],
-            ),
-          ),
-        ),
-        if (_parsedProgram != null && allTasks.isNotEmpty)
-          _buildTaskSubListBar(allTasks),
-        Expanded(
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            color: colors.codeBg,
-            child: SingleChildScrollView(
-              child: SelectableText(
-                _generatedSql,
-                style: GoogleFonts.firaCode(
-                  color: colors.sqlText,
-                  fontSize: 13,
-                  height: 1.5,
+              _buildModeToggle(showLabels),
+              const SizedBox(width: 10),
+              ElevatedButton.icon(
+                onPressed: _canGenerate ? _generateSql : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.accent,
+                  foregroundColor: colors.textOnAccent,
+                  disabledBackgroundColor: colors.disabledBg,
+                  disabledForegroundColor: colors.textMuted,
+                  elevation: 0,
+                  padding: EdgeInsets.symmetric(horizontal: showLabels ? 14 : 10, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: _isGenerating
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      )
+                    : const Icon(Icons.bolt, size: 16),
+                label: Text(
+                  showLabels ? 'Generate SQL' : 'Generate',
+                  style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600),
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              _ToolbarButton(
+                icon: Icons.copy_all_outlined,
+                label: showLabels ? 'Copy' : null,
+                onTap: hasOutput ? _copyToClipboard : null,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// What you are looking at. The tree on the left is what chooses it, so this
+  /// states the selection rather than offering a second way to change it.
+  Widget _buildIdentity(List<ParsedTask> allTasks) {
+    final colors = AppColors.of(context);
+    final meta = _selectedProgramMeta;
+
+    if (meta == null) {
+      return Text(
+        'No program selected',
+        style: GoogleFonts.inter(color: colors.textMuted, fontSize: 13),
+      );
+    }
+
+    final programNumber = _programNumber(meta, 0);
+    final task = _selectedTask;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          task == null ? '#$programNumber' : task.numberWithin(programNumber),
+          style: GoogleFonts.firaCode(
+            color: colors.accent,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
           ),
         ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            task?.description ?? meta.name,
+            style: GoogleFonts.outfit(
+              color: colors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        if (task == null && allTasks.length > 1) ...[
+          const SizedBox(width: 9),
+          Text(
+            'all tasks',
+            style: GoogleFonts.inter(color: colors.textMuted, fontSize: 11.5),
+          ),
+        ],
       ],
     );
   }
 
-  Widget _buildTaskSubListBar(List<ParsedTask> allTasks) {
+  Widget _buildModeToggle(bool showLabels) {
     final colors = AppColors.of(context);
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: colors.panelBg,
-        border: Border(bottom: BorderSide(color: colors.border)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.account_tree_outlined, size: 16, color: colors.textMuted),
-          const SizedBox(width: 8),
-          Text(
-            'SUB-PROGRAMS / TASKS:',
+
+    Widget segment(String text, bool selected, VoidCallback onTap) {
+      return InkWell(
+        onTap: _canGenerate ? onTap : null,
+        borderRadius: BorderRadius.circular(6),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? colors.accent : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            text,
             style: GoogleFonts.inter(
-              color: colors.textMuted,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+              color: selected
+                  ? colors.textOnAccent
+                  : (_canGenerate ? colors.textSecondary : colors.textMuted),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  ChoiceChip(
-                    label: Text(
-                      'All Tasks (${allTasks.length})',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        color: _selectedTask == null
-                            ? colors.textOnAccent
-                            : colors.textSecondary,
-                        fontWeight: _selectedTask == null
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
-                    ),
-                    selected: _selectedTask == null,
-                    selectedColor: colors.accent,
-                    backgroundColor: colors.cardBg,
-                    onSelected: (val) {
-                      setState(() {
-                        _selectedTask = null;
-                        _generateSql();
-                      });
-                    },
+        ),
+      );
+    }
+
+    return Tooltip(
+      message: 'Parameters keeps @names in the query. Values writes them in as literals.',
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: colors.chipBg,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: colors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            segment(showLabels ? 'Parameters' : '@', !_injectValues, () {
+              setState(() {
+                _injectValues = false;
+                _generateSql();
+              });
+            }),
+            const SizedBox(width: 2),
+            segment(showLabels ? 'Values' : '"', _injectValues, () {
+              setState(() {
+                _injectValues = true;
+                _generateSql();
+              });
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Parameters
+  // ---------------------------------------------------------------------------
+
+  Widget _buildParametersPanel() {
+    final colors = AppColors.of(context);
+
+    return Container(
+      color: colors.panelBg,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 56,
+            padding: const EdgeInsets.only(left: 16, right: 8),
+            decoration: BoxDecoration(
+              color: colors.headerBg,
+              border: Border(bottom: BorderSide(color: colors.border)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.tune, size: 15, color: colors.textSecondary),
+                const SizedBox(width: 8),
+                Text(
+                  'Parameters',
+                  style: GoogleFonts.outfit(
+                    color: colors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: 6),
-                  ...allTasks.map((task) {
-                    final isSelected = _selectedTask == task;
-                    final prefix = task.level > 0 ? '${"  " * task.level}↳ ' : '';
-                    final labelText = '$prefix${task.isChild ? "Child Task" : "Main Task"} #${task.taskIsn}: ${task.description}';
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        avatar: Icon(
-                          task.isChild ? Icons.subdirectory_arrow_right : Icons.task_alt,
-                          size: 13,
-                          color: isSelected ? Colors.white : (task.isChild ? Colors.amberAccent : colors.accentIcon),
-                        ),
-                        label: Text(
-                          labelText,
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: isSelected
-                                ? colors.textOnAccent
-                                : colors.textPrimary,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        selected: isSelected,
-                        selectedColor: task.isChild ? colors.accentSecondary : colors.accent,
-                        backgroundColor: colors.cardBg,
-                        onSelected: (val) {
-                          setState(() {
-                            _selectedTask = task;
-                            _generateSql();
-                          });
-                        },
-                      ),
-                    );
-                  }),
-                ],
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  '${_activeParameters.length}',
+                  style: GoogleFonts.firaCode(color: colors.textMuted, fontSize: 11.5),
+                ),
+                const Spacer(),
+                IconButton(
+                  tooltip: 'Hide parameters',
+                  icon: Icon(Icons.close, size: 16, color: colors.textMuted),
+                  splashRadius: 15,
+                  onPressed: () => setState(() => _paramsOpen = false),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Text(
+              _injectValues
+                  ? 'These values are written into the query as literals.'
+                  : 'Fill these in to switch the query to literal values.',
+              style: GoogleFonts.inter(
+                color: colors.textMuted,
+                fontSize: 11.5,
+                height: 1.45,
               ),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              itemCount: _activeParameters.length,
+              itemBuilder: (context, index) =>
+                  _buildParameterField(_activeParameters[index]),
             ),
           ),
         ],
@@ -1581,20 +1534,300 @@ class _MainViewState extends State<MainView> {
     );
   }
 
-  Widget _buildStatPill(String text, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
+  Widget _buildParameterField(ProgramParameter param) {
+    final colors = AppColors.of(context);
+    final ctrl = _paramControllers[param.name];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  '@${param.name}',
+                  style: GoogleFonts.firaCode(
+                    color: colors.syntaxParam,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (!param.isParameter) ...[
+                const SizedBox(width: 6),
+                Text(
+                  'var',
+                  style: GoogleFonts.inter(
+                    color: colors.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(
+            SqlGeneratorService.sqlTypeFor(param.type),
+            style: GoogleFonts.firaCode(color: colors.textMuted, fontSize: 10),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: ctrl,
+            onChanged: (val) => param.currentValue = val,
+            style: GoogleFonts.firaCode(color: colors.textPrimary, fontSize: 12),
+            decoration: InputDecoration(
+              hintText: 'NULL',
+              hintStyle: GoogleFonts.firaCode(color: colors.inputHint, fontSize: 12),
+              filled: true,
+              fillColor: colors.inputBg,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(7),
+                borderSide: BorderSide(color: colors.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(7),
+                borderSide: BorderSide(color: colors.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(7),
+                borderSide: BorderSide(color: colors.inputFocusBorder),
+              ),
+            ),
+          ),
+        ],
       ),
-      child: Text(
-        text,
-        style: GoogleFonts.inter(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Small shared pieces
+// -----------------------------------------------------------------------------
+
+class _HeaderButton extends StatelessWidget {
+  final IconData icon;
+  final Color? iconColor;
+  final String? label;
+  final IconData? trailing;
+  final VoidCallback? onTap;
+
+  const _HeaderButton({
+    required this.icon,
+    this.iconColor,
+    this.label,
+    this.trailing,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final enabled = onTap != null;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: label == null ? 8 : 11, vertical: 7),
+        decoration: BoxDecoration(
+          color: colors.cardBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: colors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: enabled ? (iconColor ?? colors.textSecondary) : colors.textMuted,
+            ),
+            if (label != null) ...[
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  label!,
+                  style: GoogleFonts.inter(
+                    color: enabled ? colors.textPrimary : colors.textMuted,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+            if (trailing != null) ...[
+              const SizedBox(width: 6),
+              Icon(trailing, size: 14, color: colors.textMuted),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolbarButton extends StatelessWidget {
+  final IconData icon;
+  final String? label;
+  final VoidCallback? onTap;
+
+  const _ToolbarButton({required this.icon, this.label, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final enabled = onTap != null;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: label == null ? 10 : 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: colors.cardBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: colors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: enabled ? colors.textPrimary : colors.textMuted),
+            if (label != null) ...[
+              const SizedBox(width: 7),
+              Text(
+                label!,
+                style: GoogleFonts.inter(
+                  color: enabled ? colors.textPrimary : colors.textMuted,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TreeAction extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _TreeAction({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            color: colors.accentIcon,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatPill extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color color;
+
+  const _StatPill({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$value',
+            style: GoogleFonts.firaCode(
+              color: color,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              color: color.withValues(alpha: 0.85),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String body;
+
+  const _EmptyState({required this.icon, required this.title, required this.body});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 26, color: colors.textMuted),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.outfit(
+                  color: colors.textSecondary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                body,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  color: colors.textMuted,
+                  fontSize: 12.5,
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

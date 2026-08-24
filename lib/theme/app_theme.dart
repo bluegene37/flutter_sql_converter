@@ -29,6 +29,22 @@ class AppColors {
   // SQL output
   final Color sqlText;
 
+  // SQL syntax. The generated query is the product, so it gets a real palette
+  // rather than a single flat colour.
+  final Color syntaxKeyword;
+  final Color syntaxString;
+  final Color syntaxParam;
+  final Color syntaxNumber;
+  final Color syntaxComment;
+  final Color syntaxCommentStrong;
+  final Color syntaxPunctuation;
+  final Color gutterText;
+  final Color gutterLine;
+
+  // Stat pills
+  final Color statTasks;
+  final Color statJoins;
+
   // Status
   final Color successBg;
   final Color successBorder;
@@ -75,6 +91,17 @@ class AppColors {
     required this.accentSecondary,
     required this.accentIcon,
     required this.sqlText,
+    required this.syntaxKeyword,
+    required this.syntaxString,
+    required this.syntaxParam,
+    required this.syntaxNumber,
+    required this.syntaxComment,
+    required this.syntaxCommentStrong,
+    required this.syntaxPunctuation,
+    required this.gutterText,
+    required this.gutterLine,
+    required this.statTasks,
+    required this.statJoins,
     required this.successBg,
     required this.successBorder,
     required this.successText,
@@ -114,7 +141,19 @@ class AppColors {
     accent: Color(0xFF06B6D4),
     accentSecondary: Color(0xFF3B82F6),
     accentIcon: Color(0xFF38BDF8),
-    sqlText: Color(0xFF38BDF8),
+    // Body text of the query reads calm; colour is reserved for meaning.
+    sqlText: Color(0xFFE2E8F0),
+    syntaxKeyword: Color(0xFF38BDF8),
+    syntaxString: Color(0xFFFCD34D),
+    syntaxParam: Color(0xFFC084FC),
+    syntaxNumber: Color(0xFFFB923C),
+    syntaxComment: Color(0xFF64748B),
+    syntaxCommentStrong: Color(0xFF94A3B8),
+    syntaxPunctuation: Color(0xFF64748B),
+    gutterText: Color(0xFF3F4C63),
+    gutterLine: Color(0xFF1E293B),
+    statTasks: Color(0xFF22D3EE),
+    statJoins: Color(0xFFC084FC),
     successBg: Color(0xFF064E3B),
     successBorder: Color(0xFF059669),
     successText: Color(0xFF34D399),
@@ -152,7 +191,18 @@ class AppColors {
     accent: Color(0xFF0891B2),
     accentSecondary: Color(0xFF2563EB),
     accentIcon: Color(0xFF0284C7),
-    sqlText: Color(0xFF0369A1),
+    sqlText: Color(0xFF0F172A),
+    syntaxKeyword: Color(0xFF0369A1),
+    syntaxString: Color(0xFFB45309),
+    syntaxParam: Color(0xFF7C3AED),
+    syntaxNumber: Color(0xFFC2410C),
+    syntaxComment: Color(0xFF94A3B8),
+    syntaxCommentStrong: Color(0xFF64748B),
+    syntaxPunctuation: Color(0xFF94A3B8),
+    gutterText: Color(0xFFB6C2D2),
+    gutterLine: Color(0xFFE2E8F0),
+    statTasks: Color(0xFF0E7490),
+    statJoins: Color(0xFF7C3AED),
     successBg: Color(0xFFDCFCE7),
     successBorder: Color(0xFF16A34A),
     successText: Color(0xFF15803D),

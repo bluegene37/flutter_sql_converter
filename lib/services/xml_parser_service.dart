@@ -209,7 +209,16 @@ class XmlParserService {
     }
   }
 
-  static String _sanitiseName(String raw) => raw.trim().replaceAll(RegExp(r'[\s?]+'), '_');
+  /// uniPaaS field names allow spaces and punctuation — "p_Job Id",
+  /// "g_AppName()", "p_AllowNoUserLoggedIn?" — none of which are legal in a
+  /// T-SQL variable name. Reduce them to a valid identifier.
+  static String _sanitiseName(String raw) {
+    var name = raw.trim().replaceAll(RegExp(r'[^A-Za-z0-9_]+'), '_');
+    name = name.replaceAll(RegExp(r'_{2,}'), '_').replaceAll(RegExp(r'_+$'), '');
+    if (name.isEmpty) return 'Field';
+    if (RegExp(r'^[0-9]').hasMatch(name)) return 'v$name';
+    return name;
+  }
 
   // ---------------------------------------------------------------------------
   // Program
@@ -233,15 +242,20 @@ class XmlParserService {
       }
 
       final programsNode = doc.findAllElements('Programs').firstOrNull;
-      final rootTaskNodes = (programsNode != null)
-          ? programsNode.children.whereType<XmlElement>().where((e) => e.name.local == 'Task')
-          : doc.children.whereType<XmlElement>().where((e) => e.name.local == 'Task');
+      final rootTaskNodes = ((programsNode != null)
+              ? programsNode.children.whereType<XmlElement>().where((e) => e.name.local == 'Task')
+              : doc.children.whereType<XmlElement>().where((e) => e.name.local == 'Task'))
+          .toList();
 
-      for (final rootTaskNode in rootTaskNodes) {
+      for (var rootIndex = 0; rootIndex < rootTaskNodes.length; rootIndex++) {
+        final rootTaskNode = rootTaskNodes[rootIndex];
         final parsedTask = _parseSingleTask(
           rootTaskNode,
           parentTaskId: null,
           level: 0,
+          // A single root task *is* the program, so it carries no path of its
+          // own. Only a file with several roots needs them numbered.
+          hierarchyPath: rootTaskNodes.length > 1 ? '${rootIndex + 1}' : '',
           extractedParameters: extractedParameters,
           generationChain: const [],
           ancestorTypes: const {},
@@ -279,6 +293,7 @@ class XmlParserService {
     XmlElement taskNode, {
     String? parentTaskId,
     int level = 0,
+    String hierarchyPath = '',
     required List<ProgramParameter> extractedParameters,
     required List<Map<String, _AncestorField>> generationChain,
     required Map<String, String> ancestorTypes,
@@ -548,13 +563,19 @@ class XmlParserService {
       }
     }
 
-    final childTaskNodes = taskNode.children.whereType<XmlElement>().where((e) => e.name.local == 'Task');
+    final childTaskNodes = taskNode.children
+        .whereType<XmlElement>()
+        .where((e) => e.name.local == 'Task')
+        .toList();
     final parsedSubTasks = <ParsedTask>[];
-    for (final childNode in childTaskNodes) {
+    for (var i = 0; i < childTaskNodes.length; i++) {
+      final childPath =
+          hierarchyPath.isEmpty ? '${i + 1}' : '$hierarchyPath.${i + 1}';
       final childTask = _parseSingleTask(
-        childNode,
+        childTaskNodes[i],
         parentTaskId: taskId,
         level: level + 1,
+        hierarchyPath: childPath,
         extractedParameters: extractedParameters,
         generationChain: childChain,
         ancestorTypes: childTypes,
@@ -567,6 +588,7 @@ class XmlParserService {
       taskIsn: taskIsn,
       parentTaskId: parentTaskId,
       level: level,
+      hierarchyPath: hierarchyPath,
       description: taskDesc,
       mainTableObj: mainTableObj,
       mainTableName: mainTableName,

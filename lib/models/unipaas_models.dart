@@ -376,6 +376,12 @@ class ParsedTask {
   final String taskIsn;
   final String? parentTaskId;
   final int level;
+
+  /// Position in the task tree, the way uniPaaS Studio numbers it: a root task
+  /// has an empty path and shows as the program's own number, its children are
+  /// "1", "2", and their children "1.1", "1.2". Combined with the program
+  /// number this reads as `#12.1`, matching the Studio title bar.
+  final String hierarchyPath;
   final String description;
   final String mainTableObj;
   final String mainTableName;
@@ -415,6 +421,7 @@ class ParsedTask {
     this.taskIsn = '1',
     this.parentTaskId,
     this.level = 0,
+    this.hierarchyPath = '',
     required this.description,
     required this.mainTableObj,
     required this.mainTableName,
@@ -434,6 +441,13 @@ class ParsedTask {
   }) : mainTableAlias = mainTableAlias ?? mainTableName;
 
   bool get isChild => level > 0 || (parentTaskId != null && parentTaskId!.isNotEmpty);
+
+  bool get hasSubTasks => subTasks.isNotEmpty;
+
+  /// The full label, given the program's position in the list: `#12` for a root
+  /// task, `#12.1.2` for a grandchild.
+  String numberWithin(String programNumber) =>
+      hierarchyPath.isEmpty ? '#$programNumber' : '#$programNumber.$hierarchyPath';
 
   bool get hasDataSource =>
       (mainTableObj.isNotEmpty && mainTableObj != '0') || joins.isNotEmpty;
