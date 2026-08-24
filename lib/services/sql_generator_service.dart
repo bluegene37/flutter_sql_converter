@@ -94,20 +94,43 @@ class SqlGeneratorService {
 
     final declared = <String>{};
     final declarations = <String>[];
+    // Values an enclosing task feeds in are listed apart from the caller's own
+    // parameters, because nobody fills them in by hand.
+    final fromEnclosingTask = <String>[];
 
-    void consider(String name, String type, String value) {
+    void consider(String name, String type, String value, {String note = ''}) {
       if (taskParamNames.contains(name)) return;
       final cleanName = name.replaceAll(' ', '_');
       if (!usedText.contains('@$name') && !usedText.contains('@$cleanName')) return;
       if (!declared.add(cleanName)) return;
-      declarations.add('DECLARE @$cleanName ${_mapToSqlType(type)} = $value;');
+
+      final decl = 'DECLARE @$cleanName ${_mapToSqlType(type)} = $value;';
+      if (note.isEmpty) {
+        declarations.add(decl);
+      } else {
+        fromEnclosingTask.add('$decl  -- $note');
+      }
     }
 
     for (final p in parameters) {
-      consider(p.name, p.type, _formatSqlLiteral(p.currentValue, p.type));
+      consider(
+        p.name,
+        p.type,
+        _formatSqlLiteral(p.currentValue, p.type),
+        note: p.sourceNote,
+      );
     }
     for (final g in program.mainProgramGlobals.values) {
       consider(g.name, g.sqlType, 'NULL');
+    }
+
+    if (fromEnclosingTask.isNotEmpty) {
+      buffer.writeln('-- Read from the current record of the parent task, which runs this one');
+      buffer.writeln('-- once per row. Each comment names the task and the column it comes from.');
+      for (final decl in fromEnclosingTask) {
+        buffer.writeln(decl);
+      }
+      buffer.writeln();
     }
 
     if (declarations.isNotEmpty) {

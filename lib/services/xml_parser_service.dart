@@ -65,12 +65,22 @@ class _LinkContext {
 class _AncestorField {
   final String ref;
   final String sqlType;
-  _AncestorField(this.ref, this.sqlType);
+
+  /// Where the value comes from, for the comment on its declaration. Empty for
+  /// variables, which are shared rather than passed down.
+  final String note;
+
+  _AncestorField(this.ref, this.sqlType, {this.note = ''});
 }
 
 class XmlParserService {
   final SchemaService schemaService;
   final Map<String, GlobalVarInfo> _mainProgramGlobals = {};
+
+  /// Names handed out for enclosing-task columns during the current program,
+  /// mapped to the column they stand for, so two different columns never end
+  /// up sharing one name. Reset per program.
+  final Map<String, String> _parentRefSources = {};
 
   XmlParserService(this.schemaService);
 
@@ -232,6 +242,7 @@ class XmlParserService {
       final doc = XmlDocument.parse(xmlString);
       final topTasks = <ParsedTask>[];
       final extractedParameters = <ProgramParameter>[];
+      _parentRefSources.clear();
 
       String progId = '';
       String progName = filename;
@@ -259,6 +270,7 @@ class XmlParserService {
           extractedParameters: extractedParameters,
           generationChain: const [],
           ancestorTypes: const {},
+          ancestorNotes: const {},
         );
         if (parsedTask != null) {
           if (progId.isEmpty && parsedTask.taskId.isNotEmpty) progId = parsedTask.taskId;
@@ -297,6 +309,7 @@ class XmlParserService {
     required List<ProgramParameter> extractedParameters,
     required List<Map<String, _AncestorField>> generationChain,
     required Map<String, String> ancestorTypes,
+    required Map<String, String> ancestorNotes,
   }) {
     final headerNode = taskNode.findElements('Header').firstOrNull;
     String taskId = '';
@@ -406,9 +419,16 @@ class XmlParserService {
         if (record.tableObj.isEmpty || record.colVal.isEmpty) continue;
         final colName = schemaService.getColumnName(record.tableObj, record.colVal);
         fieldRefs[record.fieldId] = '[${record.tableAlias}].[$colName]';
+
+        // A descendant task runs once per record of this one, so this column
+        // reaches it as a value. Name it after the field name the developer
+        // gave it, which is also what this task selects it AS, so the two
+        // queries visibly line up.
+        final alias = _columnAlias(record);
         descendantRefs[record.fieldId] = _AncestorField(
-          '@${record.tableAlias}_$colName',
+          '@${_parentRefName(alias, record.tableAlias, colName)}',
           schemaService.getColumnSqlType(record.tableObj, record.colVal),
+          note: '$taskDesc · [${record.tableAlias}].[$colName]',
         );
       } else {
         // Virtual selects address the variable list positionally.
@@ -454,13 +474,7 @@ class XmlParserService {
 
       final tableName = schemaService.getTableName(record.tableObj);
       final colName = schemaService.getColumnName(record.tableObj, record.colVal);
-      final alias = record.realVarName.isNotEmpty
-          ? _sanitiseName(record.realVarName)
-          : schemaService.getColumnAlias(
-              record.tableObj,
-              record.colVal,
-              fallback: colName,
-            );
+      final alias = _columnAlias(record);
 
       final selected = SelectedColumn(
         fieldId: record.fieldId,
@@ -487,9 +501,11 @@ class XmlParserService {
         );
         if (condition == null) continue;
 
-        _registerImplicitParameters(condition.$1, extractedParameters, ancestorTypes);
+        _registerImplicitParameters(
+            condition.$1, extractedParameters, ancestorTypes, ancestorNotes);
         if (condition.$2.isNotEmpty) {
-          _registerImplicitParameters(condition.$2, extractedParameters, ancestorTypes);
+          _registerImplicitParameters(
+              condition.$2, extractedParameters, ancestorTypes, ancestorNotes);
         }
 
         if (record.joinIndex >= 0) {
@@ -526,7 +542,8 @@ class XmlParserService {
 
       final expression = resolve(withValue);
       if (expression.isEmpty) continue;
-      _registerImplicitParameters(expression, extractedParameters, ancestorTypes);
+      _registerImplicitParameters(
+          expression, extractedParameters, ancestorTypes, ancestorNotes);
 
       assignments.add(ColumnAssignment(
         fieldId: fieldId,
@@ -557,10 +574,12 @@ class XmlParserService {
     // a child addresses as {1,N}.
     final childChain = <Map<String, _AncestorField>>[descendantRefs, ...generationChain];
     final childTypes = <String, String>{...ancestorTypes};
+    final childNotes = <String, String>{...ancestorNotes};
     for (final field in descendantRefs.values) {
-      if (field.ref.startsWith('@')) {
-        childTypes[field.ref.substring(1)] = field.sqlType;
-      }
+      if (!field.ref.startsWith('@')) continue;
+      final name = field.ref.substring(1);
+      childTypes[name] = field.sqlType;
+      if (field.note.isNotEmpty) childNotes[name] = field.note;
     }
 
     final childTaskNodes = taskNode.children
@@ -579,6 +598,7 @@ class XmlParserService {
         extractedParameters: extractedParameters,
         generationChain: childChain,
         ancestorTypes: childTypes,
+        ancestorNotes: childNotes,
       );
       if (childTask != null) parsedSubTasks.add(childTask);
     }
@@ -741,6 +761,39 @@ class XmlParserService {
     return next == 1 ? tableName : '${tableName}_$next';
   }
 
+  /// The name a real column is known by: the one the developer typed into the
+  /// task if there is one, otherwise the schema's own name for it.
+  String _columnAlias(_SelectRecord record) {
+    if (record.realVarName.isNotEmpty) return _sanitiseName(record.realVarName);
+    final colName = schemaService.getColumnName(record.tableObj, record.colVal);
+    return schemaService.getColumnAlias(
+      record.tableObj,
+      record.colVal,
+      fallback: colName,
+    );
+  }
+
+  /// Picks the variable name a descendant task will use for an enclosing
+  /// task's column. Two different columns can share a field name, so the table
+  /// is folded in when that happens rather than letting them collide.
+  String _parentRefName(String alias, String tableAlias, String colName) {
+    final source = '$tableAlias.$colName';
+    // The alias is fine bracketed as a SELECT alias, but here it becomes a
+    // variable name, and 584 schema columns carry spaces in their names.
+    final preferred = 'parent_${_sanitiseName(alias)}';
+
+    final claimed = _parentRefSources[preferred];
+    if (claimed == null) {
+      _parentRefSources[preferred] = source;
+      return preferred;
+    }
+    if (claimed == source) return preferred;
+
+    final qualified = _sanitiseName('parent_${tableAlias}_$colName');
+    _parentRefSources[qualified] = source;
+    return qualified;
+  }
+
   /// Update operations live in the task's handler logic units, not the
   /// dataview, so every unit of this task has to be searched. Nested tasks are
   /// excluded because `TaskLogic` is read as a direct child only.
@@ -844,6 +897,7 @@ class XmlParserService {
     String expression,
     List<ProgramParameter> into,
     Map<String, String> typeByName,
+    Map<String, String> noteByName,
   ) {
     for (final m in RegExp(r'@([A-Za-z_][A-Za-z0-9_]*)').allMatches(expression)) {
       final name = m.group(1)!;
@@ -861,6 +915,7 @@ class XmlParserService {
         name: name,
         type: typeByName[name] ?? globalType ?? 'NVARCHAR(255)',
         isParameter: true,
+        sourceNote: noteByName[name] ?? '',
       ));
     }
   }

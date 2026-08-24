@@ -253,12 +253,17 @@ void main() {
     final child = program.tasks.single.subTasks.single;
 
     // The parent's dJobs row is not in the child's FROM clause, so its column
-    // arrives as a value rather than a dangling table reference.
-    expect(child.whereConditions.single.valueExpression, equals('@dJobs_jobCompany'));
-    expect(
-      program.extractedParameters.firstWhere((p) => p.name == 'dJobs_jobCompany').type,
-      equals('INT'),
-    );
+    // arrives as a value rather than a dangling table reference. It is named
+    // after the field, matching what the parent selects it AS.
+    expect(child.whereConditions.single.valueExpression, equals('@parent_jobCompany'));
+
+    final param =
+        program.extractedParameters.firstWhere((p) => p.name == 'parent_jobCompany');
+    expect(param.type, equals('INT'));
+    // And it says where it came from, so it is not mistaken for an input.
+    expect(param.isFromEnclosingTask, isTrue);
+    expect(param.sourceNote, contains('[dJobs].[jobCompany]'));
+    expect(param.sourceNote, contains('Parent'));
   });
 
   test('a table owned by another component is not resolved against the local schema', () {

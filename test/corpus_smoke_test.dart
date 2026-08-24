@@ -82,6 +82,16 @@ void main() {
           parameters: program.extractedParameters,
         );
         if (sql.isEmpty) failures.add('${file.path}: empty SQL');
+
+        // Every DECLARE has to name a legal T-SQL variable. uniPaaS field and
+        // column names carry spaces, parentheses and question marks, so this
+        // is the guard that they were all reduced to identifiers.
+        for (final m in RegExp(r'DECLARE @(\S*)').allMatches(sql)) {
+          final name = m.group(1)!;
+          if (!RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$').hasMatch(name)) {
+            failures.add('${file.path}: invalid variable name "@$name"');
+          }
+        }
       } catch (e) {
         failures.add('${file.path}: $e');
       }

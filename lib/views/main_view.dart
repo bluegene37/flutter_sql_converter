@@ -1640,16 +1640,28 @@ class _MainViewState extends State<MainView> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: param.isParameter ? colors.paramBadgeBg : colors.varBadgeBg,
+                  color: param.isFromEnclosingTask
+                      ? colors.varBadgeBg
+                      : (param.isParameter ? colors.paramBadgeBg : colors.varBadgeBg),
                   borderRadius: BorderRadius.circular(4),
                   border: Border.all(
-                    color: param.isParameter ? colors.paramBadgeBorder : colors.varBadgeBorder,
+                    color: param.isFromEnclosingTask
+                        ? colors.accentSecondary
+                        : (param.isParameter
+                            ? colors.paramBadgeBorder
+                            : colors.varBadgeBorder),
                   ),
                 ),
                 child: Text(
-                  param.isParameter ? 'PARAM' : 'VAR',
+                  param.isFromEnclosingTask
+                      ? 'FROM PARENT'
+                      : (param.isParameter ? 'PARAM' : 'VAR'),
                   style: GoogleFonts.inter(
-                    color: param.isParameter ? colors.paramBadgeText : colors.varBadgeText,
+                    color: param.isFromEnclosingTask
+                        ? colors.accentIcon
+                        : (param.isParameter
+                            ? colors.paramBadgeText
+                            : colors.varBadgeText),
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1662,6 +1674,19 @@ class _MainViewState extends State<MainView> {
             SqlGeneratorService.sqlTypeFor(param.type),
             style: GoogleFonts.firaCode(color: colors.textMuted, fontSize: 10),
           ),
+          // A value the parent task supplies per row is not the caller's to
+          // fill in, so name its origin instead of leaving it looking blank.
+          if (param.isFromEnclosingTask) ...[
+            const SizedBox(height: 3),
+            Text(
+              param.sourceNote,
+              style: GoogleFonts.inter(
+                color: colors.textMuted,
+                fontSize: 10,
+                height: 1.35,
+              ),
+            ),
+          ],
           const SizedBox(height: 6),
           TextField(
             controller: ctrl,

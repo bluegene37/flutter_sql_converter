@@ -16,6 +16,12 @@ class ProgramParameter {
   final String name;
   final String type;
   final bool isParameter;
+
+  /// Where the value comes from when it is not the caller's to supply — for a
+  /// field read off an enclosing task's record, the task and column it came
+  /// from. Empty for ordinary parameters.
+  final String sourceNote;
+
   String currentValue;
 
   ProgramParameter({
@@ -24,8 +30,12 @@ class ProgramParameter {
     required this.name,
     required this.type,
     required this.isParameter,
+    this.sourceNote = '',
     this.currentValue = '',
   });
+
+  /// True when an enclosing task feeds this value in, rather than the caller.
+  bool get isFromEnclosingTask => sourceNote.isNotEmpty;
 
   factory ProgramParameter.fromJson(Map<String, dynamic> json) {
     return ProgramParameter(
@@ -45,6 +55,7 @@ class ProgramParameter {
       name: name,
       type: type,
       isParameter: isParameter,
+      sourceNote: sourceNote,
       currentValue: currentValue ?? this.currentValue,
     );
   }
