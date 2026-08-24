@@ -215,6 +215,10 @@ class _MainViewState extends State<MainView> {
     // Load DataSources.xml in background so scanning remains instant (skip in widget test environment)
     if (!Platform.environment.containsKey('FLUTTER_TEST')) {
       _schemaService.loadDataSourcesXmlFromDir(targetDir).then((_) {
+        // Comps.xml names the data objects owned by other components, whose
+        // ids do not exist in DataSources.xml.
+        return _schemaService.loadComponentsXmlFromDir(targetDir);
+      }).then((_) {
         if (mounted) setState(() {});
       });
     }
