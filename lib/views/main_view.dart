@@ -684,7 +684,6 @@ class _MainViewState extends State<MainView> {
 
   Widget _buildHeader() {
     final colors = AppColors.of(context);
-    final folderName = _sourceDirectory.split(Platform.pathSeparator).last;
 
     return Container(
       height: 60,
@@ -695,18 +694,19 @@ class _MainViewState extends State<MainView> {
       ),
       child: Row(
         children: [
+          // App Logo and Name
           Container(
-            width: 30,
-            height: 30,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
               ),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.data_object, color: Colors.white, size: 17),
+            child: const Icon(Icons.data_object, color: Colors.white, size: 18),
           ),
-          const SizedBox(width: 11),
+          const SizedBox(width: 12),
           Text(
             'SQL Generator',
             style: GoogleFonts.outfit(
@@ -716,50 +716,124 @@ class _MainViewState extends State<MainView> {
               letterSpacing: -0.2,
             ),
           ),
-          const SizedBox(width: 20),
+          const SizedBox(width: 18),
 
-          // The folder is identified by its name; the full path is a detail
-          // you ask for, not something to read every time.
+          // Read-only Folder Path Display
           Flexible(
-            child: Tooltip(
-              message: _sourceDirectory,
-              child: _HeaderButton(
-                icon: Icons.folder_open,
-                iconColor: colors.accentIcon,
-                label: folderName.isEmpty ? 'Choose folder' : folderName,
-                trailing: Icons.unfold_more,
-                onTap: _changeSourceDirectory,
+            child: Container(
+              height: 36,
+              padding: const EdgeInsets.only(left: 10, right: 6),
+              decoration: BoxDecoration(
+                color: colors.panelBg,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: colors.border),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.folder_outlined, color: colors.accentIcon, size: 16),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Tooltip(
+                      message: _sourceDirectory,
+                      child: SelectableText(
+                        _sourceDirectory,
+                        maxLines: 1,
+                        style: GoogleFonts.firaCode(
+                          color: colors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Change XML source folder',
+                    child: InkWell(
+                      onTap: _changeSourceDirectory,
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: colors.cardBg,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: colors.borderSubtle),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.folder_open, size: 13, color: colors.accent),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Browse',
+                              style: GoogleFonts.inter(
+                                color: colors.textPrimary,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
 
           const Spacer(),
 
-          Text(
-            _isLoading
-                ? 'Scanning…'
-                : '${_formatCount(_schemaService.programs.length)} programs',
-            style: GoogleFonts.inter(
-              color: colors.textSecondary,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w500,
+          // Programs Ready Counter
+          Container(
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: colors.successBg.withValues(
+                alpha: colors.isDark ? 0.35 : 1.0,
+              ),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: colors.successBorder.withValues(alpha: 0.5),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(Icons.check_circle_outline, size: 15, color: colors.successText),
+                const SizedBox(width: 7),
+                Text(
+                  _isLoading
+                      ? 'Scanning…'
+                      : '${_formatCount(_schemaService.programs.length)} Programs Ready',
+                  style: GoogleFonts.inter(
+                    color: colors.successText,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 10),
+
+          // Rescan Button
           _HeaderButton(
             icon: Icons.refresh,
-            iconColor: colors.textSecondary,
+            iconColor: colors.textPrimary,
             label: 'Rescan',
+            tooltip: 'Rescan XML folder for new or updated files',
             onTap: _isLoading ? null : _rescanAndRefresh,
           ),
-          const SizedBox(width: 8),
-          Tooltip(
-            message: colors.isDark ? 'Switch to light mode' : 'Switch to dark mode',
-            child: _HeaderButton(
-              icon: colors.isDark ? Icons.light_mode : Icons.dark_mode,
-              iconColor: colors.isDark ? const Color(0xFFFBBF24) : colors.accent,
-              onTap: widget.onToggleTheme,
-            ),
+          const SizedBox(width: 10),
+
+          // Theme Toggle - Extreme Right
+          _HeaderButton(
+            icon: colors.isDark ? Icons.light_mode : Icons.dark_mode,
+            iconColor: colors.isDark ? const Color(0xFFFBBF24) : colors.accent,
+            tooltip: colors.isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
+            onTap: widget.onToggleTheme,
           ),
         ],
       ),
@@ -826,7 +900,7 @@ class _MainViewState extends State<MainView> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 8, 6),
+            padding: const EdgeInsets.fromLTRB(14, 0, 10, 8),
             child: Row(
               children: [
                 Expanded(
@@ -842,13 +916,22 @@ class _MainViewState extends State<MainView> {
                 ),
                 Tooltip(
                   message: _hideEmptyPrograms
-                      ? 'Showing only programs with tables'
-                      : 'Showing every program',
+                      ? 'Showing only programs with database tables'
+                      : 'Showing all programs',
                   child: InkWell(
                     onTap: () => setState(() => _hideEmptyPrograms = !_hideEmptyPrograms),
                     borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _hideEmptyPrograms
+                            ? colors.accent.withValues(alpha: 0.15)
+                            : colors.cardBg,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: _hideEmptyPrograms ? colors.accent : colors.border,
+                        ),
+                      ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -863,9 +946,9 @@ class _MainViewState extends State<MainView> {
                           Text(
                             'With tables',
                             style: GoogleFonts.inter(
-                              color: _hideEmptyPrograms ? colors.accent : colors.textMuted,
+                              color: _hideEmptyPrograms ? colors.accent : colors.textSecondary,
                               fontSize: 11,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: _hideEmptyPrograms ? FontWeight.w600 : FontWeight.w500,
                             ),
                           ),
                         ],
@@ -1306,43 +1389,50 @@ class _MainViewState extends State<MainView> {
                 _StatPill(label: 'joins', value: joinCount, color: colors.statJoins),
               ],
               const Spacer(),
-              if (_canGenerate && _activeParameters.isNotEmpty && !_paramsOpen) ...[
+              if (_canGenerate && _activeParameters.isNotEmpty) ...[
                 _ToolbarButton(
                   icon: Icons.tune,
-                  label: showLabels ? '${_activeParameters.length} parameters' : null,
-                  onTap: () => setState(() => _paramsOpen = true),
+                  label: showLabels ? '${_activeParameters.length} Params' : '${_activeParameters.length}',
+                  isActive: _paramsOpen,
+                  tooltip: _paramsOpen ? 'Hide parameters panel' : 'Show parameters panel (${_activeParameters.length} active)',
+                  onTap: () => setState(() => _paramsOpen = !_paramsOpen),
                 ),
                 const SizedBox(width: 8),
               ],
               _buildModeToggle(showLabels),
-              const SizedBox(width: 10),
-              ElevatedButton.icon(
-                onPressed: _canGenerate ? _generateSql : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colors.accent,
-                  foregroundColor: colors.textOnAccent,
-                  disabledBackgroundColor: colors.disabledBg,
-                  disabledForegroundColor: colors.textMuted,
-                  elevation: 0,
-                  padding: EdgeInsets.symmetric(horizontal: showLabels ? 14 : 10, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                icon: _isGenerating
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                      )
-                    : const Icon(Icons.bolt, size: 16),
-                label: Text(
-                  showLabels ? 'Generate SQL' : 'Generate',
-                  style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600),
+              const SizedBox(width: 8),
+              Tooltip(
+                message: _canGenerate ? 'Generate T-SQL query' : 'No tables available to generate SQL',
+                child: ElevatedButton.icon(
+                  onPressed: _canGenerate ? _generateSql : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: colors.accent,
+                    foregroundColor: colors.textOnAccent,
+                    disabledBackgroundColor: colors.disabledBg,
+                    disabledForegroundColor: colors.textMuted,
+                    elevation: 0,
+                    minimumSize: const Size(0, 36),
+                    padding: EdgeInsets.symmetric(horizontal: showLabels ? 14 : 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  icon: _isGenerating
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Icon(Icons.bolt, size: 16),
+                  label: Text(
+                    showLabels ? 'Generate SQL' : 'Generate',
+                    style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               _ToolbarButton(
                 icon: Icons.copy_all_outlined,
                 label: showLabels ? 'Copy' : null,
+                tooltip: hasOutput ? 'Copy SQL query to clipboard' : 'No SQL output to copy',
                 onTap: hasOutput ? _copyToClipboard : null,
               ),
             ],
@@ -1406,51 +1496,68 @@ class _MainViewState extends State<MainView> {
   Widget _buildModeToggle(bool showLabels) {
     final colors = AppColors.of(context);
 
-    Widget segment(String text, bool selected, VoidCallback onTap) {
+    Widget segment(String text, IconData icon, bool selected, VoidCallback onTap) {
       return InkWell(
         onTap: _canGenerate ? onTap : null,
         borderRadius: BorderRadius.circular(6),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: selected ? colors.accent : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Text(
-            text,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              color: selected
-                  ? colors.textOnAccent
-                  : (_canGenerate ? colors.textSecondary : colors.textMuted),
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 13,
+                color: selected
+                    ? colors.textOnAccent
+                    : (_canGenerate ? colors.textSecondary : colors.textMuted),
+              ),
+              if (showLabels) ...[
+                const SizedBox(width: 5),
+                Text(
+                  text,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    color: selected
+                        ? colors.textOnAccent
+                        : (_canGenerate ? colors.textSecondary : colors.textMuted),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       );
     }
 
     return Tooltip(
-      message: 'Parameters keeps @names in the query. Values writes them in as literals.',
+      message: 'Parameters: keeps @variables in the query.\nValues: replaces variables with literal values.',
       child: Container(
+        height: 36,
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           color: colors.chipBg,
-          borderRadius: BorderRadius.circular(9),
+          borderRadius: BorderRadius.circular(8),
           border: Border.all(color: colors.border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            segment(showLabels ? 'Parameters' : '@', !_injectValues, () {
+            segment('Params', Icons.alternate_email, !_injectValues, () {
               setState(() {
                 _injectValues = false;
                 _generateSql();
               });
             }),
             const SizedBox(width: 2),
-            segment(showLabels ? 'Values' : '"', _injectValues, () {
+            segment('Values', Icons.tag, _injectValues, () {
               setState(() {
                 _injectValues = true;
                 _generateSql();
@@ -1483,7 +1590,7 @@ class _MainViewState extends State<MainView> {
             ),
             child: Row(
               children: [
-                Icon(Icons.tune, size: 15, color: colors.textSecondary),
+                Icon(Icons.tune, size: 16, color: colors.accent),
                 const SizedBox(width: 8),
                 Text(
                   'Parameters',
@@ -1493,10 +1600,21 @@ class _MainViewState extends State<MainView> {
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                const SizedBox(width: 7),
-                Text(
-                  '${_activeParameters.length}',
-                  style: GoogleFonts.firaCode(color: colors.textMuted, fontSize: 11.5),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: colors.accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_activeParameters.length}',
+                    style: GoogleFonts.firaCode(
+                      color: colors.accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
@@ -1551,26 +1669,34 @@ class _MainViewState extends State<MainView> {
                   style: GoogleFonts.firaCode(
                     color: colors.syntaxParam,
                     fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (!param.isParameter) ...[
-                const SizedBox(width: 6),
-                Text(
-                  'var',
-                  style: GoogleFonts.inter(
-                    color: colors.textMuted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: param.isParameter ? colors.paramBadgeBg : colors.varBadgeBg,
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: param.isParameter ? colors.paramBadgeBorder : colors.varBadgeBorder,
                   ),
                 ),
-              ],
+                child: Text(
+                  param.isParameter ? 'PARAM' : 'VAR',
+                  style: GoogleFonts.inter(
+                    color: param.isParameter ? colors.paramBadgeText : colors.varBadgeText,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 3),
           Text(
             SqlGeneratorService.sqlTypeFor(param.type),
             style: GoogleFonts.firaCode(color: colors.textMuted, fontSize: 10),
@@ -1578,7 +1704,12 @@ class _MainViewState extends State<MainView> {
           const SizedBox(height: 6),
           TextField(
             controller: ctrl,
-            onChanged: (val) => param.currentValue = val,
+            onChanged: (val) {
+              param.currentValue = val;
+              if (_injectValues) {
+                _generateSql();
+              }
+            },
             style: GoogleFonts.firaCode(color: colors.textPrimary, fontSize: 12),
             decoration: InputDecoration(
               hintText: 'NULL',
@@ -1616,6 +1747,7 @@ class _HeaderButton extends StatelessWidget {
   final Color? iconColor;
   final String? label;
   final IconData? trailing;
+  final String? tooltip;
   final VoidCallback? onTap;
 
   const _HeaderButton({
@@ -1623,6 +1755,7 @@ class _HeaderButton extends StatelessWidget {
     this.iconColor,
     this.label,
     this.trailing,
+    this.tooltip,
     this.onTap,
   });
 
@@ -1631,11 +1764,12 @@ class _HeaderButton extends StatelessWidget {
     final colors = AppColors.of(context);
     final enabled = onTap != null;
 
-    return InkWell(
+    final btn = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: label == null ? 8 : 11, vertical: 7),
+        height: 36,
+        padding: EdgeInsets.symmetric(horizontal: label == null ? 9 : 12),
         decoration: BoxDecoration(
           color: colors.cardBg,
           borderRadius: BorderRadius.circular(8),
@@ -1643,6 +1777,7 @@ class _HeaderButton extends StatelessWidget {
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(
               icon,
@@ -1672,43 +1807,68 @@ class _HeaderButton extends StatelessWidget {
         ),
       ),
     );
+
+    if (tooltip != null) {
+      return Tooltip(message: tooltip!, child: btn);
+    }
+    return btn;
   }
 }
 
 class _ToolbarButton extends StatelessWidget {
   final IconData icon;
   final String? label;
+  final String? tooltip;
+  final bool isActive;
   final VoidCallback? onTap;
 
-  const _ToolbarButton({required this.icon, this.label, this.onTap});
+  const _ToolbarButton({
+    required this.icon,
+    this.label,
+    this.tooltip,
+    this.isActive = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
     final enabled = onTap != null;
 
-    return InkWell(
+    final btn = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: label == null ? 10 : 12, vertical: 11),
+        height: 36,
+        padding: EdgeInsets.symmetric(horizontal: label == null ? 10 : 12),
         decoration: BoxDecoration(
-          color: colors.cardBg,
+          color: isActive ? colors.accent.withValues(alpha: 0.15) : colors.cardBg,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: colors.border),
+          border: Border.all(
+            color: isActive ? colors.accent : colors.border,
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(icon, size: 15, color: enabled ? colors.textPrimary : colors.textMuted),
+            Icon(
+              icon,
+              size: 15,
+              color: enabled
+                  ? (isActive ? colors.accent : colors.textPrimary)
+                  : colors.textMuted,
+            ),
             if (label != null) ...[
               const SizedBox(width: 7),
               Text(
                 label!,
                 style: GoogleFonts.inter(
-                  color: enabled ? colors.textPrimary : colors.textMuted,
+                  color: enabled
+                      ? (isActive ? colors.accent : colors.textPrimary)
+                      : colors.textMuted,
                   fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
             ],
@@ -1716,6 +1876,11 @@ class _ToolbarButton extends StatelessWidget {
         ),
       ),
     );
+
+    if (tooltip != null) {
+      return Tooltip(message: tooltip!, child: btn);
+    }
+    return btn;
   }
 }
 
