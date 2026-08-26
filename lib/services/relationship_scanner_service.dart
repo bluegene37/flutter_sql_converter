@@ -63,10 +63,13 @@ class RelationshipScanner {
 
     var programName = fallbackName;
     if (tasks.isNotEmpty) {
-      final description =
-          tasks.first.findElements('Header').firstOrNull?.getAttribute(
-                'Description',
-              );
+      // Some descriptions carry stray leading whitespace, which would sort the
+      // program to the top of an otherwise alphabetical list.
+      final description = tasks.first
+          .findElements('Header')
+          .firstOrNull
+          ?.getAttribute('Description')
+          ?.trim();
       if (description != null && description.isNotEmpty) {
         programName = description;
       }
@@ -312,6 +315,10 @@ class RelationshipScannerService {
   /// isolates keeps the UI responsive and the wall time reasonable.
   static const int _workerCount = 6;
 
+  /// Bump whenever a change to the scan would produce different output for the
+  /// same files, so an existing cache is discarded rather than served forever.
+  static const int _cacheFormatVersion = 2;
+
   /// Where the scan result is remembered between launches. Overridable so a
   /// test never writes over the developer's own cache.
   final String cacheFilePath;
@@ -511,7 +518,7 @@ class RelationshipScannerService {
         if (modified > newest) newest = modified;
       } catch (_) {}
     }
-    return '${files.length}:$totalSize:$newest';
+    return 'v$_cacheFormatVersion:${files.length}:$totalSize:$newest';
   }
 
   Future<SchemaGraph?> _readCache(String directory, String fingerprint) async {

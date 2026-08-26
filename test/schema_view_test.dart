@@ -57,10 +57,11 @@ Future<void> _pumpSchemaView(
   SchemaGraph? graph,
   void Function(String programName)? onOpenProgram,
   bool isScanning = false,
+  Size size = const Size(1600, 1100),
 }) async {
   final schema = SchemaService()..parseDataSourcesString(_dataSources);
 
-  tester.view.physicalSize = const Size(1600, 1100);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
@@ -90,6 +91,14 @@ void main() {
   setUpAll(() {
     TestWidgetsFlutterBinding.ensureInitialized();
     GoogleFonts.config.allowRuntimeFetching = false;
+  });
+
+  test('counts carry thousands separators', () {
+    expect(formatCount(7), '7');
+    expect(formatCount(999), '999');
+    expect(formatCount(3414), '3,414');
+    expect(formatCount(20879), '20,879');
+    expect(formatCount(1234567), '1,234,567');
   });
 
   testWidgets('cards view lists every table with its relationship count',
@@ -226,6 +235,66 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(opened, 'Job Entry');
+  });
+
+  group('toolbar layout', () {
+    testWidgets('the filters sit on their own row below the search',
+        (tester) async {
+      await _pumpSchemaView(tester);
+
+      // Both filter groups are present, and the mode switch shares the search
+      // row rather than competing with them.
+      expect(find.text('Source'), findsOneWidget);
+      expect(find.text('Role'), findsOneWidget);
+      expect(find.text('Cards'), findsOneWidget);
+    });
+
+    testWidgets('the filter row disappears in the programs view',
+        (tester) async {
+      await _pumpSchemaView(tester);
+
+      await tester.tap(find.text('Programs'));
+      await tester.pumpAndSettle();
+
+      // Programs are not narrowed by connection or name role.
+      expect(find.text('Source'), findsNothing);
+      expect(find.text('Role'), findsNothing);
+      // The mode switch is still there, because it moved to the search row.
+      expect(find.text('Cards'), findsOneWidget);
+    });
+
+    testWidgets('connections are ordered by how many tables they hold',
+        (tester) async {
+      await _pumpSchemaView(tester);
+
+      final chips = tester
+          .widgetList<SchemaFilterChip>(find.byType(SchemaFilterChip))
+          .toList();
+      final sources =
+          chips.where((c) => c.count != null).map((c) => c.label).toList();
+
+      // MyFlo holds two of the three tables, Memory one.
+      expect(sources, ['MyFlo', 'Memory']);
+      expect(chips.firstWhere((c) => c.label == 'MyFlo').count, 2);
+    });
+
+    testWidgets('a narrow window drops the counts before the mode switch',
+        (tester) async {
+      await _pumpSchemaView(tester, size: const Size(820, 900));
+
+      // The count pills give way (the search hint still mentions tables)...
+      expect(find.text('3 tables'), findsNothing);
+      expect(find.text('4 columns'), findsNothing);
+      // ...but the relationship count, the reason this screen exists, stays.
+      expect(find.text('1 link'), findsOneWidget);
+      // ...and the toggle keeps working as icons.
+      expect(find.text('Cards'), findsNothing);
+      expect(find.byIcon(Icons.account_tree_outlined), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.account_tree_outlined));
+      await tester.pumpAndSettle();
+      expect(find.text('Source'), findsNothing);
+    });
   });
 
   testWidgets('the browser stays usable while the scan is still running',

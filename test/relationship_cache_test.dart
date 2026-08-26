@@ -130,6 +130,18 @@ void main() {
     expect(result.fromCache, isFalse);
   });
 
+  test('a cache written by an older scanner is discarded', () async {
+    await scanner.scanDirectory(sourceDir.path, schema);
+
+    // Simulate a cache left behind by a scanner whose output would differ.
+    final stale = cacheFile.readAsStringSync().replaceFirst('"v2:', '"v1:');
+    cacheFile.writeAsStringSync(stale);
+
+    final result = await scanner.scanDirectory(sourceDir.path, schema);
+
+    expect(result.fromCache, isFalse);
+  });
+
   test('a folder with no program files yields an empty graph', () async {
     final empty = await Directory.systemTemp.createTemp('rel_scan_empty');
     addTearDown(() => empty.delete(recursive: true));

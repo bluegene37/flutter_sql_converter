@@ -426,7 +426,7 @@ class _SchemaViewState extends State<SchemaView> {
       if (showTableCount) ...[
         SchemaStatPill(
           icon: Icons.table_chart_outlined,
-          label: '${_formatCount(_allTables.length)} tables',
+          label: '${formatCount(_allTables.length)} tables',
           color: colors.accent,
         ),
         const SizedBox(width: 6),
@@ -434,7 +434,7 @@ class _SchemaViewState extends State<SchemaView> {
       if (showColumnCount) ...[
         SchemaStatPill(
           icon: Icons.view_column_outlined,
-          label: '${_formatCount(_totalColumns)} columns',
+          label: '${formatCount(_totalColumns)} columns',
           color: colors.statTasks,
         ),
         const SizedBox(width: 6),
@@ -443,7 +443,7 @@ class _SchemaViewState extends State<SchemaView> {
         icon: Icons.link,
         label: relationships == 1
             ? '1 link'
-            : '${_formatCount(relationships)} links',
+            : '${formatCount(relationships)} links',
         color: colors.statJoins,
       ),
       const SizedBox(width: 6),
@@ -581,13 +581,4 @@ class _SchemaViewState extends State<SchemaView> {
     ('o · Object', 'o'),
   ];
 
-  static String _formatCount(int n) {
-    final digits = n.toString();
-    final buffer = StringBuffer();
-    for (var i = 0; i < digits.length; i++) {
-      if (i > 0 && (digits.length - i) % 3 == 0) buffer.write(',');
-      buffer.write(digits[i]);
-    }
-    return buffer.toString();
-  }
 }

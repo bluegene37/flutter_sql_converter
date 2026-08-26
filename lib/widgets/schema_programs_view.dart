@@ -51,7 +51,7 @@ class SchemaProgramsView extends StatelessWidget {
                   child: Text(
                     programs.length == 1
                         ? '1 program with relationships'
-                        : '${programs.length} programs with relationships',
+                        : '${formatCount(programs.length)} programs with relationships',
                     style: GoogleFonts.inter(
                       color: colors.textSecondary,
                       fontSize: 11,
