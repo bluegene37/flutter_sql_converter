@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/schema_relationship.dart';
 import '../models/unipaas_models.dart';
+import '../services/relationship_scanner_service.dart';
 import '../services/schema_service.dart';
 import '../services/xml_parser_service.dart';
 import '../services/sql_generator_service.dart';
@@ -12,6 +14,11 @@ import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/drag_handle.dart';
 import '../widgets/sql_view.dart';
+import 'schema_view.dart';
+
+/// The two things the app does: turn a program into SQL, and show how the
+/// programs wire the database together.
+enum AppMode { generator, schema }
 
 class MainView extends StatefulWidget {
   final VoidCallback onToggleTheme;
@@ -26,6 +33,22 @@ class _MainViewState extends State<MainView> {
   final SchemaService _schemaService = SchemaService();
   late final XmlParserService _xmlParserService;
   final SqlGeneratorService _sqlGeneratorService = SqlGeneratorService();
+  final RelationshipScannerService _relationshipScanner =
+      RelationshipScannerService();
+
+  AppMode _mode = AppMode.generator;
+
+  /// Relationship scan state. The sweep is deferred until the schema browser is
+  /// opened, because it reads every program in the folder.
+  SchemaGraph _schemaGraph = SchemaGraph.empty;
+  bool _isScanningRelationships = false;
+  bool _hasScannedRelationships = false;
+  int _relationshipScanDone = 0;
+  int _relationshipScanTotal = 0;
+
+  /// Completes once DataSources.xml and Comps.xml have been read; the
+  /// relationship scan needs them to turn object ids into names.
+  Future<void>? _schemaMetadataReady;
 
   String _sourceDirectory = '/Users/bluegene37/StudioProjects/flutter_sql_converter/source';
   List<ProgramMetadata> _filteredPrograms = [];
@@ -239,7 +262,8 @@ class _MainViewState extends State<MainView> {
 
     // Load DataSources.xml in background so scanning remains instant (skip in widget test environment)
     if (!Platform.environment.containsKey('FLUTTER_TEST')) {
-      _schemaService.loadDataSourcesXmlFromDir(targetDir).then((_) {
+      _schemaMetadataReady =
+          _schemaService.loadDataSourcesXmlFromDir(targetDir).then((_) {
         // Comps.xml names the data objects owned by other components, whose
         // ids do not exist in DataSources.xml.
         return _schemaService.loadComponentsXmlFromDir(targetDir);
@@ -247,6 +271,11 @@ class _MainViewState extends State<MainView> {
         if (mounted) setState(() {});
       });
     }
+
+    // A different folder describes a different database, so anything the last
+    // sweep found no longer applies.
+    _schemaGraph = SchemaGraph.empty;
+    _hasScannedRelationships = false;
 
     final dir = Directory(targetDir);
     if (!await dir.exists()) {
@@ -454,6 +483,138 @@ class _MainViewState extends State<MainView> {
     if (currentMeta != null) {
       await _selectProgram(currentMeta, targetTask: currentTask);
     }
+    // The folder sweep cleared the relationship graph; rebuild it now if the
+    // schema browser is the visible tab.
+    if (_mode == AppMode.schema) await _ensureRelationshipScan();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Schema browser
+  // ---------------------------------------------------------------------------
+
+  void _switchMode(AppMode mode) {
+    if (_mode == mode) return;
+    setState(() => _mode = mode);
+    if (mode == AppMode.schema) _ensureRelationshipScan();
+  }
+
+  /// Sweeps every program for table relationships. Cheap after the first run:
+  /// the scanner caches its result against a fingerprint of the folder.
+  Future<void> _ensureRelationshipScan({bool force = false}) async {
+    if (_isScanningRelationships) return;
+    if (_hasScannedRelationships && !force) return;
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return;
+
+    setState(() {
+      _isScanningRelationships = true;
+      _relationshipScanDone = 0;
+      _relationshipScanTotal = 0;
+    });
+
+    try {
+      // Object ids mean nothing until the data-source repository is loaded.
+      await _schemaMetadataReady;
+
+      final result = await _relationshipScanner.scanDirectory(
+        _sourceDirectory,
+        _schemaService,
+        useCache: !force,
+        onProgress: (done, total) {
+          if (!mounted) return;
+          setState(() {
+            _relationshipScanDone = done;
+            _relationshipScanTotal = total;
+          });
+        },
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _schemaGraph = result.graph;
+        _hasScannedRelationships = true;
+        _isScanningRelationships = false;
+      });
+
+      if (!result.fromCache) _showRelationshipScanSummary(result);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isScanningRelationships = false);
+      _showSnack(
+        'Relationship scan failed: $e',
+        icon: Icons.error_outline,
+        iconColor: Colors.amberAccent,
+      );
+    }
+  }
+
+  void _showRelationshipScanSummary(RelationshipScanResult result) {
+    final seconds = result.duration.inMilliseconds / 1000;
+    _showSnack(
+      'Scanned ${_formatCount(result.filesScanned)} programs in '
+      '${seconds.toStringAsFixed(1)}s — '
+      '${_formatCount(result.graph.relationships.length)} table relationships '
+      'across ${_formatCount(result.graph.programs.length)} programs.',
+      icon: Icons.hub_outlined,
+      iconColor: Colors.greenAccent,
+    );
+  }
+
+  /// Opens a program the schema browser named in the SQL generator.
+  Future<void> _openProgramFromSchema(String programName) async {
+    final filename = _schemaGraph.fileForProgram(programName);
+
+    ProgramMetadata? match;
+    for (final program in _schemaService.programs) {
+      if (filename != null &&
+          program.filename.toLowerCase() == filename.toLowerCase()) {
+        match = program;
+        break;
+      }
+      if (program.name == programName) match ??= program;
+    }
+
+    if (match == null) {
+      _showSnack(
+        'No XML file in this folder matches "$programName".',
+        icon: Icons.help_outline,
+        iconColor: Colors.amberAccent,
+      );
+      return;
+    }
+
+    if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+    setState(() => _mode = AppMode.generator);
+    _searchController.clear();
+    _filterPrograms('');
+    await _selectProgram(match);
+  }
+
+  void _showSnack(String message, {required IconData icon, Color? iconColor}) {
+    if (!mounted) return;
+    final colors = AppColors.of(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(icon, color: iconColor ?? colors.accent, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.inter(
+                  color: colors.snackbarText,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: colors.snackbarBg,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+      ),
+    );
   }
 
   void _filterPrograms(String query) {
@@ -757,46 +918,64 @@ class _MainViewState extends State<MainView> {
                   backgroundColor: colors.panelBg,
                   minHeight: 2,
                 ),
+              // IndexedStack rather than a swap, so panel widths, the selected
+              // program and the schema filters all survive tab switching.
               Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    // Leave the query at least half the window however the side
-                    // panels are dragged.
-                    final maxSide = constraints.maxWidth * 0.5;
-                    return Row(
-                      children: [
-                        SizedBox(
-                          width: _leftWidth.clamp(220.0, maxSide),
-                          child: _buildProgramsPanel(),
-                        ),
-                        DragHandle(
-                          onDrag: (dx) => setState(
-                            () => _leftWidth =
-                                (_leftWidth + dx).clamp(220.0, maxSide),
-                          ),
-                        ),
-                        Expanded(child: _buildOutputPanel()),
-                        if (_showParameters) ...[
-                          DragHandle(
-                            onDrag: (dx) => setState(
-                              () => _rightWidth =
-                                  (_rightWidth - dx).clamp(260.0, maxSide),
-                            ),
-                          ),
-                          SizedBox(
-                            width: _rightWidth.clamp(260.0, maxSide),
-                            child: _buildParametersPanel(),
-                          ),
-                        ],
-                      ],
-                    );
-                  },
+                child: IndexedStack(
+                  index: _mode.index,
+                  children: [
+                    _buildGeneratorBody(),
+                    SchemaView(
+                      schemaService: _schemaService,
+                      graph: _schemaGraph,
+                      isScanning: _isScanningRelationships,
+                      scanDone: _relationshipScanDone,
+                      scanTotal: _relationshipScanTotal,
+                      onRescan: () => _ensureRelationshipScan(force: true),
+                      onOpenProgram: _openProgramFromSchema,
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildGeneratorBody() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Leave the query at least half the window however the side panels are
+        // dragged.
+        final maxSide = constraints.maxWidth * 0.5;
+        return Row(
+          children: [
+            SizedBox(
+              width: _leftWidth.clamp(220.0, maxSide),
+              child: _buildProgramsPanel(),
+            ),
+            DragHandle(
+              onDrag: (dx) => setState(
+                () => _leftWidth = (_leftWidth + dx).clamp(220.0, maxSide),
+              ),
+            ),
+            Expanded(child: _buildOutputPanel()),
+            if (_showParameters) ...[
+              DragHandle(
+                onDrag: (dx) => setState(
+                  () => _rightWidth = (_rightWidth - dx).clamp(260.0, maxSide),
+                ),
+              ),
+              SizedBox(
+                width: _rightWidth.clamp(260.0, maxSide),
+                child: _buildParametersPanel(),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -833,17 +1012,25 @@ class _MainViewState extends State<MainView> {
                 ),
                 child: const Icon(Icons.data_object, color: Colors.white, size: 18),
               ),
-              const SizedBox(width: 10),
-              Text(
-                isVeryCompact ? 'UniPaaS SQL' : 'UniPaaS SQL Generator',
-                style: GoogleFonts.outfit(
-                  color: colors.textPrimary,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.2,
+              if (!isVeryCompact) ...[
+                const SizedBox(width: 10),
+                Text(
+                  'UniPaaS',
+                  style: GoogleFonts.outfit(
+                    color: colors.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 14),
+              ],
+              const SizedBox(width: 12),
+
+              // The two halves of the app: build a query, or explore how the
+              // programs wire the database together. The labels are the first
+              // thing to go when the window is narrow.
+              _buildAppModeToggle(showLabels: !isCompact),
+              const SizedBox(width: 12),
 
               // Read-only Folder Path Display
               Expanded(
@@ -947,6 +1134,76 @@ class _MainViewState extends State<MainView> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildAppModeToggle({required bool showLabels}) {
+    final colors = AppColors.of(context);
+    const modes = [
+      (AppMode.generator, Icons.code, 'SQL Generator'),
+      (AppMode.schema, Icons.schema_outlined, 'SQL Schema'),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: colors.panelBg,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: colors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final (mode, icon, label) in modes)
+            Tooltip(
+              message: showLabels ? '' : label,
+              child: InkWell(
+                onTap: () => _switchMode(mode),
+                borderRadius: BorderRadius.circular(7),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 130),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: showLabels ? 11 : 9,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _mode == mode ? colors.cardBg : Colors.transparent,
+                    borderRadius: BorderRadius.circular(7),
+                    border: Border.all(
+                      color: _mode == mode
+                          ? colors.selectedBorder
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        icon,
+                        size: 14,
+                        color:
+                            _mode == mode ? colors.accent : colors.textMuted,
+                      ),
+                      if (showLabels) ...[
+                        const SizedBox(width: 7),
+                        Text(
+                          label,
+                          style: GoogleFonts.inter(
+                            color: _mode == mode
+                                ? colors.textPrimary
+                                : colors.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
