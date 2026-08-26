@@ -1,5 +1,5 @@
 name: flutter_sql_converter
-description: "A UniPaaS SQL Converter or Generator"
+description: "A high-performance UniPaaS/XPA to MSSQL Generator and Converter"
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 

@@ -51,6 +51,7 @@ class _MainViewState extends State<MainView> {
   bool _treeOpen = true;
   final Set<String> _collapsedTasks = {};
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   final Map<String, TextEditingController> _paramControllers = {};
 
   bool get _canGenerate {
@@ -65,6 +66,17 @@ class _MainViewState extends State<MainView> {
     super.initState();
     _xmlParserService = XmlParserService(_schemaService);
     _initApp();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    for (final ctrl in _paramControllers.values) {
+      ctrl.dispose();
+    }
+    _paramControllers.clear();
+    super.dispose();
   }
 
   Future<void> _initApp() async {
@@ -610,6 +622,79 @@ class _MainViewState extends State<MainView> {
     );
   }
 
+  Future<void> _exportSqlToFile() async {
+    if (_generatedSql.isEmpty || !_canGenerate) return;
+    final colors = AppColors.of(context);
+    try {
+      final defaultName = _selectedProgramMeta != null
+          ? '${_selectedProgramMeta!.name.replaceAll(RegExp(r'[^\w\s-]'), '_')}.sql'
+          : 'query.sql';
+      final savePath = await FilePicker.saveFile(
+        dialogTitle: 'Export SQL Query',
+        fileName: defaultName,
+        type: FileType.custom,
+        allowedExtensions: ['sql'],
+      );
+      if (savePath != null) {
+        final file = File(savePath);
+        await file.writeAsString(_generatedSql);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, color: Colors.greenAccent, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'SQL query exported to: $savePath',
+                      style: GoogleFonts.inter(
+                        color: colors.snackbarText,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: colors.snackbarBg,
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.amberAccent, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Export failed: $e',
+                    style: GoogleFonts.inter(
+                      color: colors.snackbarText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: colors.snackbarBg,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Layout
   // ---------------------------------------------------------------------------
@@ -628,52 +713,89 @@ class _MainViewState extends State<MainView> {
   @override
   Widget build(BuildContext context) {
     final colors = AppColors.of(context);
-    return Scaffold(
-      backgroundColor: colors.scaffoldBg,
-      body: Column(
-        children: [
-          _buildHeader(),
-          if (_isLoading)
-            LinearProgressIndicator(
-              color: colors.accent,
-              backgroundColor: colors.panelBg,
-              minHeight: 2,
-            ),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // Leave the query at least half the window however the side
-                // panels are dragged.
-                final maxSide = constraints.maxWidth * 0.5;
-                return Row(
-                  children: [
-                    SizedBox(
-                      width: _leftWidth.clamp(220.0, maxSide),
-                      child: _buildProgramsPanel(),
-                    ),
-                    DragHandle(
-                      onDrag: (dx) => setState(
-                        () => _leftWidth = (_leftWidth + dx).clamp(220.0, maxSide),
-                      ),
-                    ),
-                    Expanded(child: _buildOutputPanel()),
-                    if (_showParameters) ...[
-                      DragHandle(
-                        onDrag: (dx) => setState(
-                          () => _rightWidth = (_rightWidth - dx).clamp(260.0, maxSide),
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () =>
+            _searchFocusNode.requestFocus(),
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
+            _searchFocusNode.requestFocus(),
+        const SingleActivator(LogicalKeyboardKey.keyG, meta: true): () {
+          if (_canGenerate) _generateSql();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyG, control: true): () {
+          if (_canGenerate) _generateSql();
+        },
+        const SingleActivator(LogicalKeyboardKey.enter, meta: true): () {
+          if (_canGenerate) _generateSql();
+        },
+        const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
+          if (_canGenerate) _generateSql();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
+          if (_canGenerate && _generatedSql.isNotEmpty) _exportSqlToFile();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
+          if (_canGenerate && _generatedSql.isNotEmpty) _exportSqlToFile();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyR, meta: true): () {
+          if (!_isLoading) _rescanAndRefresh();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyR, control: true): () {
+          if (!_isLoading) _rescanAndRefresh();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: colors.scaffoldBg,
+          body: Column(
+            children: [
+              _buildHeader(),
+              if (_isLoading)
+                LinearProgressIndicator(
+                  color: colors.accent,
+                  backgroundColor: colors.panelBg,
+                  minHeight: 2,
+                ),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Leave the query at least half the window however the side
+                    // panels are dragged.
+                    final maxSide = constraints.maxWidth * 0.5;
+                    return Row(
+                      children: [
+                        SizedBox(
+                          width: _leftWidth.clamp(220.0, maxSide),
+                          child: _buildProgramsPanel(),
                         ),
-                      ),
-                      SizedBox(
-                        width: _rightWidth.clamp(260.0, maxSide),
-                        child: _buildParametersPanel(),
-                      ),
-                    ],
-                  ],
-                );
-              },
-            ),
+                        DragHandle(
+                          onDrag: (dx) => setState(
+                            () => _leftWidth =
+                                (_leftWidth + dx).clamp(220.0, maxSide),
+                          ),
+                        ),
+                        Expanded(child: _buildOutputPanel()),
+                        if (_showParameters) ...[
+                          DragHandle(
+                            onDrag: (dx) => setState(
+                              () => _rightWidth =
+                                  (_rightWidth - dx).clamp(260.0, maxSide),
+                            ),
+                          ),
+                          SizedBox(
+                            width: _rightWidth.clamp(260.0, maxSide),
+                            child: _buildParametersPanel(),
+                          ),
+                        ],
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -685,137 +807,146 @@ class _MainViewState extends State<MainView> {
   Widget _buildHeader() {
     final colors = AppColors.of(context);
 
-    return Container(
-      height: 60,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      decoration: BoxDecoration(
-        color: colors.headerBg,
-        border: Border(bottom: BorderSide(color: colors.border)),
-      ),
-      child: Row(
-        children: [
-          // App Logo and Name
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.data_object, color: Colors.white, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            'SQL Generator',
-            style: GoogleFonts.outfit(
-              color: colors.textPrimary,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -0.2,
-            ),
-          ),
-          const SizedBox(width: 18),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 860;
+        final isVeryCompact = constraints.maxWidth < 680;
 
-          // Read-only Folder Path Display
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: colors.panelBg,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: colors.border),
+        return Container(
+          height: 60,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: colors.headerBg,
+            border: Border(bottom: BorderSide(color: colors.border)),
+          ),
+          child: Row(
+            children: [
+              // App Logo and Name
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.data_object, color: Colors.white, size: 18),
               ),
-              child: Row(
-                children: [
-                  Icon(Icons.folder_outlined, color: colors.accentIcon, size: 15),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Tooltip(
-                      message: _sourceDirectory,
-                      child: Text(
-                        _sourceDirectory,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.firaCode(
-                          color: colors.textSecondary,
-                          fontSize: 12,
+              const SizedBox(width: 10),
+              Text(
+                isVeryCompact ? 'UniPaaS SQL' : 'UniPaaS SQL Generator',
+                style: GoogleFonts.outfit(
+                  color: colors.textPrimary,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Read-only Folder Path Display
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: colors.panelBg,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: colors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.folder_outlined, color: colors.accentIcon, size: 15),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Tooltip(
+                          message: _sourceDirectory,
+                          child: Text(
+                            _sourceDirectory,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.firaCode(
+                              color: colors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Tooltip(
-                    message: 'Change XML source folder',
-                    child: InkWell(
-                      onTap: _changeSourceDirectory,
-                      borderRadius: BorderRadius.circular(5),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        child: Icon(Icons.folder_open, size: 15, color: colors.accent),
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: 'Change XML source folder',
+                        child: InkWell(
+                          onTap: _changeSourceDirectory,
+                          borderRadius: BorderRadius.circular(5),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Icon(Icons.folder_open, size: 15, color: colors.accent),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 12),
-
-          // Programs Ready Counter
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: colors.successBg.withValues(
-                alpha: colors.isDark ? 0.35 : 1.0,
-              ),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: colors.successBorder.withValues(alpha: 0.5),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Icon(Icons.check_circle_outline, size: 14, color: colors.successText),
-                const SizedBox(width: 6),
-                Text(
-                  _isLoading
-                      ? 'Scanning…'
-                      : '${_formatCount(_schemaService.programs.length)} programs ready',
-                  style: GoogleFonts.inter(
-                    color: colors.successText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
+              ),
 
-          // Rescan Button
-          _HeaderButton(
-            icon: Icons.refresh,
-            iconColor: colors.textSecondary,
-            label: 'Rescan',
-            tooltip: 'Rescan XML folder for new or updated files',
-            onTap: _isLoading ? null : _rescanAndRefresh,
-          ),
-          const SizedBox(width: 8),
+              const SizedBox(width: 10),
 
-          // Theme Toggle - Extreme Right
-          _HeaderButton(
-            icon: colors.isDark ? Icons.light_mode : Icons.dark_mode,
-            iconColor: colors.isDark ? const Color(0xFFFBBF24) : colors.accent,
-            tooltip: colors.isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
-            onTap: widget.onToggleTheme,
+              // Programs Ready Counter
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: colors.successBg.withValues(
+                    alpha: colors.isDark ? 0.35 : 1.0,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: colors.successBorder.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(Icons.check_circle_outline, size: 14, color: colors.successText),
+                    const SizedBox(width: 6),
+                    Text(
+                      _isLoading
+                          ? 'Scanning…'
+                          : (isCompact
+                              ? '${_formatCount(_schemaService.programs.length)} ready'
+                              : '${_formatCount(_schemaService.programs.length)} programs ready'),
+                      style: GoogleFonts.inter(
+                        color: colors.successText,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // Rescan Button
+              _HeaderButton(
+                icon: Icons.refresh,
+                iconColor: colors.textSecondary,
+                label: isCompact ? null : 'Rescan',
+                tooltip: 'Rescan XML folder for new or updated files',
+                onTap: _isLoading ? null : _rescanAndRefresh,
+              ),
+              const SizedBox(width: 8),
+
+              // Theme Toggle - Extreme Right
+              _HeaderButton(
+                icon: colors.isDark ? Icons.light_mode : Icons.dark_mode,
+                iconColor: colors.isDark ? const Color(0xFFFBBF24) : colors.accent,
+                tooltip: colors.isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
+                onTap: widget.onToggleTheme,
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -846,10 +977,11 @@ class _MainViewState extends State<MainView> {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: TextField(
               controller: _searchController,
+              focusNode: _searchFocusNode,
               onChanged: _filterPrograms,
               style: GoogleFonts.inter(color: colors.textPrimary, fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Search programs',
+                hintText: 'Search programs...',
                 hintStyle: GoogleFonts.inter(color: colors.textMuted, fontSize: 13),
                 prefixIcon: Icon(Icons.search, color: colors.textMuted, size: 17),
                 prefixIconConstraints: const BoxConstraints(minWidth: 36),
@@ -1412,6 +1544,13 @@ class _MainViewState extends State<MainView> {
                 label: showLabels ? 'Copy' : null,
                 tooltip: hasOutput ? 'Copy SQL query to clipboard' : 'No SQL output to copy',
                 onTap: hasOutput ? _copyToClipboard : null,
+              ),
+              const SizedBox(width: 8),
+              _ToolbarButton(
+                icon: Icons.file_download_outlined,
+                label: showLabels ? 'Export' : null,
+                tooltip: hasOutput ? 'Export SQL query to file (Cmd/Ctrl+S)' : 'No SQL output to export',
+                onTap: hasOutput ? _exportSqlToFile : null,
               ),
             ],
           ),
