@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_sql_converter/models/schema_relationship.dart';
 import 'package:flutter_sql_converter/services/schema_service.dart';
 import 'package:flutter_sql_converter/views/schema_view.dart';
+import 'package:flutter_sql_converter/utils/format.dart';
 import 'package:flutter_sql_converter/widgets/schema_chrome.dart';
 
 /// Table names also appear on data-source pills and in table rows, so filter
@@ -58,6 +59,7 @@ Future<void> _pumpSchemaView(
   void Function(String programName)? onOpenProgram,
   bool isScanning = false,
   Size size = const Size(1600, 1100),
+  FocusNode? searchFocusNode,
 }) async {
   final schema = SchemaService()..parseDataSourcesString(_dataSources);
 
@@ -76,6 +78,7 @@ Future<void> _pumpSchemaView(
         scanTotal: 0,
         onRescan: () {},
         onOpenProgram: onOpenProgram,
+        searchFocusNode: searchFocusNode,
       ),
     ),
   ));
@@ -295,6 +298,91 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Source'), findsNothing);
     });
+  });
+
+  testWidgets('a focus node from the parent drives the search box',
+      (tester) async {
+    // MainView owns this node so Cmd+F can reach the schema search box while
+    // the generator's own field is offstage in the IndexedStack.
+    final node = FocusNode();
+    addTearDown(node.dispose);
+
+    await _pumpSchemaView(tester, searchFocusNode: node);
+    node.requestFocus();
+    await tester.pumpAndSettle();
+
+    expect(node.hasFocus, isTrue);
+    await tester.enterText(find.byType(TextField).first, 'cusCode');
+    await tester.pumpAndSettle();
+    expect(find.text('dJobs'), findsNothing);
+  });
+
+  testWidgets('a table with long column names does not overflow its card',
+      (tester) async {
+    // Import tables carry names like ZMYFLO_MATMAS_CNTRL.SEGMENT, one per chip
+    // row, so the preview needs more rows than the fixed-height card has. Wrap
+    // overflows silently (only Flex reports it), so the assertion is geometric:
+    // no chip may paint outside the box that holds it.
+    final schema = SchemaService()
+      ..parseDataSourcesString('''
+<Application><DataSourceRepository><DataObjects>
+  <DataObject id="1" name="CSRMATZMYFLO_IDOC" PhysicalName="CSRMATZMYFLO_IDOC"
+              data_source="Default XML Database">
+    <Columns>
+      <Column id="1" name="ZMYFLO_MATMAS_CNTRL.SEGMENT.HEADER"/>
+      <Column id="2" name="ZMYFLO_COND_ZSMC_CNTRL.SEGMENT.DETAIL"/>
+      <Column id="3" name="MATERIAL_DESCRIPTION_LONG_TEXT_FIELD"/>
+      <Column id="4" name="CUSTOMER_NUMBER_QUALIFIER_SEGMENT"/>
+      <Column id="5" name="ZMYFLO_MATMAS_CNTRL.SEGMENT.TRAILER"/>
+      <Column id="6" name="EXTRA_COLUMN_BEYOND_THE_PREVIEW"/>
+    </Columns>
+  </DataObject>
+</DataObjects></DataSourceRepository></Application>
+''');
+
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(brightness: Brightness.dark),
+      home: Scaffold(
+        body: SchemaView(
+          schemaService: schema,
+          graph: SchemaGraph.from(const [
+            SchemaRelationship(
+              fromTable: 'CSRMATZMYFLO_IDOC',
+              fromColumn: 'MATERIAL_DESCRIPTION_LONG_TEXT_FIELD',
+              toTable: 'CSRMATZMYFLO_IDOC',
+              toColumn: 'CUSTOMER_NUMBER_QUALIFIER_SEGMENT',
+              programs: ['Import Materials'],
+            ),
+          ]),
+          isScanning: false,
+          scanDone: 0,
+          scanTotal: 0,
+          onRescan: () {},
+          onOpenProgram: null,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('CSRMATZMYFLO_IDOC'), findsOneWidget);
+    expect(find.text('2 relationships'), findsOneWidget);
+
+    // Every chip must sit inside the chip area. Without the clip the area is
+    // pinned to the leftover card height while the chips lay out well past it,
+    // painting over the relationship count and the card's bottom edge.
+    final chipArea = tester.getRect(find.byType(Wrap).first);
+    for (final name in const [
+      'ZMYFLO_MATMAS_CNTRL.SEGMENT.HEADER',
+      'ZMYFLO_MATMAS_CNTRL.SEGMENT.TRAILER',
+    ]) {
+      expect(tester.getRect(find.text(name)).bottom,
+          lessThanOrEqualTo(chipArea.bottom),
+          reason: '$name paints outside the chip area');
+    }
   });
 
   testWidgets('the browser stays usable while the scan is still running',

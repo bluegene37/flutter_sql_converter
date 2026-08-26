@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import 'package:xml/xml.dart';
 import 'package:xml/xml_events.dart';
 import '../models/unipaas_models.dart';
 
@@ -445,6 +446,19 @@ class SchemaService {
   }
 
   static bool isExternalTable(String key) => key.contains(':');
+
+  /// Reads a `<DB>` element into a table key. The object lives either on the
+  /// element itself or on a nested `<DataObject>`, and `comp` names the owning
+  /// component. Shared so the SQL generator and the schema browser can never
+  /// disagree about which table a task is reading.
+  static String tableKeyOfDbNode(XmlElement? dbNode) {
+    if (dbNode == null) return '';
+    final dataObject = dbNode.findElements('DataObject').firstOrNull;
+    final obj = dbNode.getAttribute('obj') ?? dataObject?.getAttribute('obj') ?? '';
+    if (obj.isEmpty || obj == '0') return '';
+    final comp = dbNode.getAttribute('comp') ?? dataObject?.getAttribute('comp') ?? '-1';
+    return tableKey(comp, obj);
+  }
 
   static (String, String) _splitKey(String key) {
     final i = key.indexOf(':');

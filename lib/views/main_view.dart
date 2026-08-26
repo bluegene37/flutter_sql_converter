@@ -12,6 +12,7 @@ import '../services/xml_parser_service.dart';
 import '../services/sql_generator_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/format.dart';
 import '../widgets/drag_handle.dart';
 import '../widgets/sql_view.dart';
 import 'schema_view.dart';
@@ -46,6 +47,11 @@ class _MainViewState extends State<MainView> {
   int _relationshipScanDone = 0;
   int _relationshipScanTotal = 0;
 
+  /// Bumped whenever a scan is started or abandoned. A sweep that finishes
+  /// after its generation has passed belongs to a folder the user has already
+  /// navigated away from, so its results are dropped.
+  int _relationshipScanGeneration = 0;
+
   /// Completes once DataSources.xml and Comps.xml have been read; the
   /// relationship scan needs them to turn object ids into names.
   Future<void>? _schemaMetadataReady;
@@ -75,6 +81,10 @@ class _MainViewState extends State<MainView> {
   final Set<String> _collapsedTasks = {};
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
+
+  /// Owned here rather than by SchemaView so Cmd+F can reach the schema
+  /// browser's search box while that tab is showing.
+  final FocusNode _schemaSearchFocusNode = FocusNode();
   final Map<String, TextEditingController> _paramControllers = {};
 
   bool get _canGenerate {
@@ -95,6 +105,7 @@ class _MainViewState extends State<MainView> {
   void dispose() {
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _schemaSearchFocusNode.dispose();
     for (final ctrl in _paramControllers.values) {
       ctrl.dispose();
     }
@@ -273,9 +284,13 @@ class _MainViewState extends State<MainView> {
     }
 
     // A different folder describes a different database, so anything the last
-    // sweep found no longer applies.
+    // sweep found no longer applies. Bumping the generation abandons a sweep
+    // that is still running over the previous folder, and clearing the flag
+    // lets the next one start rather than waiting on it.
     _schemaGraph = SchemaGraph.empty;
     _hasScannedRelationships = false;
+    _relationshipScanGeneration++;
+    _isScanningRelationships = false;
 
     final dir = Directory(targetDir);
     if (!await dir.exists()) {
@@ -505,6 +520,13 @@ class _MainViewState extends State<MainView> {
     if (_hasScannedRelationships && !force) return;
     if (Platform.environment.containsKey('FLUTTER_TEST')) return;
 
+    final generation = ++_relationshipScanGeneration;
+    // Pin the folder for this run: awaiting below gives the user time to point
+    // the app somewhere else, and the results must be attributed to the folder
+    // they were actually read from.
+    final directory = _sourceDirectory;
+    bool isCurrent() => mounted && generation == _relationshipScanGeneration;
+
     setState(() {
       _isScanningRelationships = true;
       _relationshipScanDone = 0;
@@ -516,11 +538,11 @@ class _MainViewState extends State<MainView> {
       await _schemaMetadataReady;
 
       final result = await _relationshipScanner.scanDirectory(
-        _sourceDirectory,
+        directory,
         _schemaService,
         useCache: !force,
         onProgress: (done, total) {
-          if (!mounted) return;
+          if (!isCurrent()) return;
           setState(() {
             _relationshipScanDone = done;
             _relationshipScanTotal = total;
@@ -528,7 +550,7 @@ class _MainViewState extends State<MainView> {
         },
       );
 
-      if (!mounted) return;
+      if (!isCurrent()) return;
       setState(() {
         _schemaGraph = result.graph;
         _hasScannedRelationships = true;
@@ -537,7 +559,7 @@ class _MainViewState extends State<MainView> {
 
       if (!result.fromCache) _showRelationshipScanSummary(result);
     } catch (e) {
-      if (!mounted) return;
+      if (!isCurrent()) return;
       setState(() => _isScanningRelationships = false);
       _showSnack(
         'Relationship scan failed: $e',
@@ -550,10 +572,10 @@ class _MainViewState extends State<MainView> {
   void _showRelationshipScanSummary(RelationshipScanResult result) {
     final seconds = result.duration.inMilliseconds / 1000;
     _showSnack(
-      'Scanned ${_formatCount(result.filesScanned)} programs in '
+      'Scanned ${formatCount(result.filesScanned)} programs in '
       '${seconds.toStringAsFixed(1)}s — '
-      '${_formatCount(result.graph.relationships.length)} table relationships '
-      'across ${_formatCount(result.graph.programs.length)} programs.',
+      '${formatCount(result.graph.relationships.length)} table relationships '
+      'across ${formatCount(result.graph.programs.length)} programs.',
       icon: Icons.hub_outlined,
       iconColor: Colors.greenAccent,
     );
@@ -876,28 +898,22 @@ class _MainViewState extends State<MainView> {
     final colors = AppColors.of(context);
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () =>
-            _searchFocusNode.requestFocus(),
-        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
-            _searchFocusNode.requestFocus(),
-        const SingleActivator(LogicalKeyboardKey.keyG, meta: true): () {
-          if (_canGenerate) _generateSql();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyG, control: true): () {
-          if (_canGenerate) _generateSql();
-        },
-        const SingleActivator(LogicalKeyboardKey.enter, meta: true): () {
-          if (_canGenerate) _generateSql();
-        },
-        const SingleActivator(LogicalKeyboardKey.enter, control: true): () {
-          if (_canGenerate) _generateSql();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
-          if (_canGenerate && _generatedSql.isNotEmpty) _exportSqlToFile();
-        },
-        const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
-          if (_canGenerate && _generatedSql.isNotEmpty) _exportSqlToFile();
-        },
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
+            _focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+            _focusSearch,
+        const SingleActivator(LogicalKeyboardKey.keyG, meta: true):
+            _generateSqlShortcut,
+        const SingleActivator(LogicalKeyboardKey.keyG, control: true):
+            _generateSqlShortcut,
+        const SingleActivator(LogicalKeyboardKey.enter, meta: true):
+            _generateSqlShortcut,
+        const SingleActivator(LogicalKeyboardKey.enter, control: true):
+            _generateSqlShortcut,
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true):
+            _exportSqlShortcut,
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true):
+            _exportSqlShortcut,
         const SingleActivator(LogicalKeyboardKey.keyR, meta: true): () {
           if (!_isLoading) _rescanAndRefresh();
         },
@@ -933,6 +949,7 @@ class _MainViewState extends State<MainView> {
                       scanTotal: _relationshipScanTotal,
                       onRescan: () => _ensureRelationshipScan(force: true),
                       onOpenProgram: _openProgramFromSchema,
+                      searchFocusNode: _schemaSearchFocusNode,
                     ),
                   ],
                 ),
@@ -942,6 +959,25 @@ class _MainViewState extends State<MainView> {
         ),
       ),
     );
+  }
+
+  /// Both tabs stay mounted in the IndexedStack, so a shortcut has to be aimed
+  /// at the one the user can actually see.
+  void _focusSearch() {
+    if (_mode == AppMode.schema) {
+      _schemaSearchFocusNode.requestFocus();
+    } else {
+      _searchFocusNode.requestFocus();
+    }
+  }
+
+  void _generateSqlShortcut() {
+    if (_mode == AppMode.generator && _canGenerate) _generateSql();
+  }
+
+  void _exportSqlShortcut() {
+    if (_mode != AppMode.generator) return;
+    if (_canGenerate && _generatedSql.isNotEmpty) _exportSqlToFile();
   }
 
   Widget _buildGeneratorBody() {
@@ -1100,8 +1136,8 @@ class _MainViewState extends State<MainView> {
                       _isLoading
                           ? 'Scanning…'
                           : (isCompact
-                              ? '${_formatCount(_schemaService.programs.length)} ready'
-                              : '${_formatCount(_schemaService.programs.length)} programs ready'),
+                              ? '${formatCount(_schemaService.programs.length)} ready'
+                              : '${formatCount(_schemaService.programs.length)} programs ready'),
                       style: GoogleFonts.inter(
                         color: colors.successText,
                         fontSize: 11.5,
@@ -1207,15 +1243,6 @@ class _MainViewState extends State<MainView> {
     );
   }
 
-  static String _formatCount(int n) {
-    final s = n.toString();
-    final buffer = StringBuffer();
-    for (var i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buffer.write(',');
-      buffer.write(s[i]);
-    }
-    return buffer.toString();
-  }
 
   // ---------------------------------------------------------------------------
   // Programs
@@ -1273,7 +1300,7 @@ class _MainViewState extends State<MainView> {
               children: [
                 Expanded(
                   child: Text(
-                    '${_formatCount(programs.length)} shown',
+                    '${formatCount(programs.length)} shown',
                     style: GoogleFonts.inter(
                       color: colors.textMuted,
                       fontSize: 11,

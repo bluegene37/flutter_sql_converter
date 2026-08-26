@@ -5,6 +5,7 @@ import '../models/schema_relationship.dart';
 import '../models/unipaas_models.dart';
 import '../services/schema_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/format.dart';
 import '../widgets/schema_chrome.dart';
 import '../widgets/schema_detail_dialog.dart';
 import '../widgets/schema_programs_view.dart';
@@ -31,6 +32,10 @@ class SchemaView extends StatefulWidget {
   /// matched back to a file.
   final void Function(String programName)? onOpenProgram;
 
+  /// Supplied by the parent when a global shortcut needs to reach the search
+  /// box; the browser makes its own node when it is left out.
+  final FocusNode? searchFocusNode;
+
   const SchemaView({
     super.key,
     required this.schemaService,
@@ -40,6 +45,7 @@ class SchemaView extends StatefulWidget {
     required this.scanTotal,
     required this.onRescan,
     required this.onOpenProgram,
+    this.searchFocusNode,
   });
 
   @override
@@ -48,7 +54,12 @@ class SchemaView extends StatefulWidget {
 
 class _SchemaViewState extends State<SchemaView> {
   final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocusNode = FocusNode();
+
+  /// Only disposed when this widget created it; a node passed in belongs to
+  /// the parent.
+  FocusNode? _ownedSearchFocusNode;
+  FocusNode get _searchFocusNode =>
+      widget.searchFocusNode ?? (_ownedSearchFocusNode ??= FocusNode());
 
   SchemaViewMode _mode = SchemaViewMode.grid;
   String _query = '';
@@ -66,7 +77,7 @@ class _SchemaViewState extends State<SchemaView> {
   @override
   void dispose() {
     _searchController.dispose();
-    _searchFocusNode.dispose();
+    _ownedSearchFocusNode?.dispose();
     super.dispose();
   }
 

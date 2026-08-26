@@ -117,7 +117,7 @@ class RelationshipScanner {
 
           case 'LNK':
             linkStack.add(currentTableKey);
-            final linked = tableKeyOfDbNode(
+            final linked = SchemaService.tableKeyOfDbNode(
               operation.findElements('DB').firstOrNull,
             );
             // A link with no readable object leaves the context alone rather
@@ -198,9 +198,9 @@ class RelationshipScanner {
   /// the task states its source there instead.
   static String _mainSourceKey(XmlElement task) {
     final information = _firstOnPath(task, const ['Information', 'DB']);
-    final fromInformation = tableKeyOfDbNode(information);
+    final fromInformation = SchemaService.tableKeyOfDbNode(information);
     if (fromInformation.isNotEmpty) return fromInformation;
-    return tableKeyOfDbNode(_firstOnPath(task, const ['Resource', 'DB']));
+    return SchemaService.tableKeyOfDbNode(_firstOnPath(task, const ['Resource', 'DB']));
   }
 
   /// `Locate` and `Range` address an expression by its 1-based position in the
@@ -231,20 +231,6 @@ class RelationshipScanner {
       level = next;
     }
     return level.first;
-  }
-
-  /// Reads a `<DB>` element into a schema table key. `comp` names the owning
-  /// component: -1 is this application, anything else is an external component
-  /// whose object ids live in a separate namespace.
-  static String tableKeyOfDbNode(XmlElement? dbNode) {
-    if (dbNode == null) return '';
-    final dataObject = dbNode.findElements('DataObject').firstOrNull;
-    final obj =
-        dbNode.getAttribute('obj') ?? dataObject?.getAttribute('obj') ?? '';
-    if (obj.isEmpty || obj == '0') return '';
-    final comp =
-        dbNode.getAttribute('comp') ?? dataObject?.getAttribute('comp') ?? '-1';
-    return SchemaService.tableKey(comp, obj);
   }
 
   /// Turns scanned object ids into table and column names. A link whose ends
@@ -428,16 +414,22 @@ class RelationshipScannerService {
       }
     });
 
-    for (final chunk in chunks) {
-      await Isolate.spawn(
-        _scanWorker,
-        [port.sendPort, chunk],
-        onError: port.sendPort,
-        errorsAreFatal: true,
-      );
-    }
+    try {
+      for (final chunk in chunks) {
+        await Isolate.spawn(
+          _scanWorker,
+          [port.sendPort, chunk],
+          onError: port.sendPort,
+          errorsAreFatal: true,
+        );
+      }
 
-    await finished.future;
+      await finished.future;
+    } finally {
+      // If a spawn throws part-way through, the workers already running would
+      // otherwise keep the port — and this scan — alive forever.
+      port.close();
+    }
 
     final graph =
         RelationshipScanner.resolve(raw, schema, programFiles: programFiles);
@@ -532,8 +524,6 @@ class RelationshipScannerService {
       final relationships = (data['relationships'] as List<dynamic>? ?? [])
           .map((r) => SchemaRelationship.fromJson(r as Map<String, dynamic>))
           .toList();
-      if (relationships.isEmpty) return null;
-
       final programFiles = (data['programFiles'] as Map<String, dynamic>? ?? {})
           .map((name, file) => MapEntry(name, file.toString()));
       return SchemaGraph.from(relationships, programFiles: programFiles);
@@ -547,7 +537,6 @@ class RelationshipScannerService {
     String fingerprint,
     SchemaGraph graph,
   ) async {
-    if (graph.isEmpty) return;
     try {
       await File(cacheFilePath).writeAsString(
         json.encode({

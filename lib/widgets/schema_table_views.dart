@@ -144,8 +144,14 @@ class _TableCardState extends State<_TableCard> {
                 ),
               ),
               const SizedBox(height: 7),
+              // Long column names can wrap to more rows than the fixed-height
+              // card has room for; the scroll view (never actually scrollable)
+              // gives the Wrap unbounded height and clips the excess instead of
+              // painting it over the relationship count.
               Expanded(
-                child: Wrap(
+                child: SingleChildScrollView(
+                  physics: const NeverScrollableScrollPhysics(),
+                  child: Wrap(
                   spacing: 4,
                   runSpacing: 4,
                   children: [
@@ -177,6 +183,7 @@ class _TableCardState extends State<_TableCard> {
                         ),
                       ),
                   ],
+                  ),
                 ),
               ),
               if (widget.degree > 0)

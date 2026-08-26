@@ -331,7 +331,7 @@ class XmlParserService {
 
     // Main source. `<DB comp="-1" obj="83"/>` carries the object on the DB
     // element itself; `<DB comp="-1"/>` means the task has no main source.
-    final mainTableObj = _tableKeyOf(informationNode?.findElements('DB').firstOrNull);
+    final mainTableObj = SchemaService.tableKeyOfDbNode(informationNode?.findElements('DB').firstOrNull);
     final mainTableName = schemaService.getTableName(mainTableObj);
 
     // Locate/Range/ASS address expressions by their 1-based position in the
@@ -686,7 +686,7 @@ class XmlParserService {
           case 'LNK':
             stack.add(_LinkContext(currentTableObj, currentAlias, currentJoinIndex));
 
-            final linkedObj = _tableKeyOf(op.findElements('DB').firstOrNull);
+            final linkedObj = SchemaService.tableKeyOfDbNode(op.findElements('DB').firstOrNull);
             final mode = op.getAttribute('Mode') ?? 'R';
             final indexId = op.getAttribute('Key') ?? '';
             final linkedName = schemaService.getTableName(linkedObj);
@@ -738,18 +738,6 @@ class XmlParserService {
     }
 
     return records;
-  }
-
-  /// Reads a `<DB>` element into a schema table key. The `comp` attribute
-  /// names the owning component: -1 is this application, anything else is an
-  /// external component whose object ids are a separate namespace.
-  static String _tableKeyOf(XmlElement? dbNode) {
-    if (dbNode == null) return '';
-    final dataObject = dbNode.findElements('DataObject').firstOrNull;
-    final obj = dbNode.getAttribute('obj') ?? dataObject?.getAttribute('obj') ?? '';
-    if (obj.isEmpty || obj == '0') return '';
-    final comp = dbNode.getAttribute('comp') ?? dataObject?.getAttribute('comp') ?? '-1';
-    return SchemaService.tableKey(comp, obj);
   }
 
   /// Gives each table instance a distinct alias: the first use of a table keeps

@@ -142,6 +142,23 @@ void main() {
     expect(result.fromCache, isFalse);
   });
 
+  test('a folder that genuinely has no links still caches its empty result',
+      () async {
+    // A program with no Locate contributes nothing, so the graph is empty —
+    // but the answer is real and must not be recomputed on every launch.
+    File('${sourceDir.path}/Prg_10.xml').writeAsStringSync(
+      _program.replaceAll('<Locate MAX="1"/>', ''),
+    );
+
+    final first = await scanner.scanDirectory(sourceDir.path, schema);
+    expect(first.graph.isEmpty, isTrue);
+    expect(first.fromCache, isFalse);
+
+    final second = await scanner.scanDirectory(sourceDir.path, schema);
+    expect(second.fromCache, isTrue);
+    expect(second.graph.isEmpty, isTrue);
+  });
+
   test('a folder with no program files yields an empty graph', () async {
     final empty = await Directory.systemTemp.createTemp('rel_scan_empty');
     addTearDown(() => empty.delete(recursive: true));

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../models/schema_relationship.dart';
 import '../theme/app_theme.dart';
+import '../utils/format.dart';
 import 'schema_chrome.dart';
 
 /// Programs on the left, the table links that program relies on on the right.
