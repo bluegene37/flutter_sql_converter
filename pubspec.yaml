@@ -1,5 +1,5 @@
 name: flutter_sql_converter
-description: "A high-performance UniPaaS/XPA to MSSQL Generator and Converter"
+description: "A high-performance desktop UniPaaS/XPA to Microsoft SQL Server (T-SQL) generator and schema relationship explorer"
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
@@ -39,6 +39,8 @@ flutter:
 
   assets:
     - assets/schema_data.json
+    - assets/logo.png
+    - assets/logo_icon.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

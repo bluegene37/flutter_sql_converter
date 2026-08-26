@@ -1037,16 +1037,25 @@ class _MainViewState extends State<MainView> {
           child: Row(
             children: [
               // App Logo and Name
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/logo_icon.png',
+                  width: 32,
+                  height: 32,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.data_object, color: Colors.white, size: 18),
                   ),
-                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.data_object, color: Colors.white, size: 18),
               ),
               if (!isVeryCompact) ...[
                 const SizedBox(width: 10),
@@ -1159,17 +1168,231 @@ class _MainViewState extends State<MainView> {
               ),
               const SizedBox(width: 8),
 
-              // Theme Toggle - Extreme Right
+              // Theme Toggle
               _HeaderButton(
                 icon: colors.isDark ? Icons.light_mode : Icons.dark_mode,
                 iconColor: colors.isDark ? const Color(0xFFFBBF24) : colors.accent,
                 tooltip: colors.isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
                 onTap: widget.onToggleTheme,
               ),
+              const SizedBox(width: 8),
+
+              // About App Button
+              _HeaderButton(
+                icon: Icons.info_outline,
+                iconColor: colors.textSecondary,
+                tooltip: 'About UniPaaS SQL Generator',
+                onTap: _showAboutAppDialog,
+              ),
             ],
           ),
         );
       },
+    );
+  }
+
+  void _showAboutAppDialog() {
+    final colors = AppColors.of(context);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: colors.cardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(color: colors.border),
+        ),
+        titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+        contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+        actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+        title: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/logo_icon.png',
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.data_object, color: Colors.white, size: 24),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'UniPaaS SQL Generator',
+                    style: GoogleFonts.outfit(
+                      color: colors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: colors.accent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
+                        ),
+                        child: Text(
+                          'v1.0.0',
+                          style: GoogleFonts.firaCode(
+                            color: colors.accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Production Release',
+                        style: GoogleFonts.inter(
+                          color: colors.textMuted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 10),
+              Text(
+                'A high-performance desktop workbench designed to analyze, parse, and convert UniPaaS / Magic / XPA XML repositories into clean, optimized Microsoft SQL Server (T-SQL) queries and explore database schema relationships.',
+                style: GoogleFonts.inter(
+                  color: colors.textSecondary,
+                  fontSize: 12.5,
+                  height: 1.45,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: colors.panelBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: colors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'KEYBOARD SHORTCUTS',
+                      style: GoogleFonts.inter(
+                        color: colors.textMuted,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _buildAboutShortcutRow(colors, 'Cmd / Ctrl + G or Enter', 'Generate SQL Query'),
+                    _buildAboutShortcutRow(colors, 'Cmd / Ctrl + F', 'Focus Search Field'),
+                    _buildAboutShortcutRow(colors, 'Cmd / Ctrl + S', 'Export SQL to .sql file'),
+                    _buildAboutShortcutRow(colors, 'Cmd / Ctrl + R', 'Rescan XML Directory'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '© 2026 UniPaaS Tools. All rights reserved.',
+                      style: GoogleFonts.inter(
+                        color: colors.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'macOS & Windows',
+                    style: GoogleFonts.inter(
+                      color: colors.accent,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: colors.accent,
+              foregroundColor: colors.textOnAccent,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+            child: Text(
+              'Done',
+              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAboutShortcutRow(AppColors colors, String shortcut, String description) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+            decoration: BoxDecoration(
+              color: colors.cardBg,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: colors.border),
+            ),
+            child: Text(
+              shortcut,
+              style: GoogleFonts.firaCode(
+                color: colors.textPrimary,
+                fontSize: 10.5,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              description,
+              textAlign: TextAlign.right,
+              style: GoogleFonts.inter(
+                color: colors.textSecondary,
+                fontSize: 11,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -333,4 +333,29 @@ void main() {
       await tempFile.delete();
     }
   });
+
+  testWidgets('App displays header logo and opens About Dialog with version 1.0.0 info', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const UniPaasConverterApp());
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final infoButton = find.byTooltip('About UniPaaS SQL Generator');
+    expect(infoButton, findsOneWidget);
+
+    await tester.tap(infoButton);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('UniPaaS SQL Generator'), findsWidgets);
+    expect(find.text('v1.0.0'), findsOneWidget);
+    expect(find.text('KEYBOARD SHORTCUTS'), findsOneWidget);
+    expect(find.text('Done'), findsOneWidget);
+
+    await tester.tap(find.text('Done'));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }
