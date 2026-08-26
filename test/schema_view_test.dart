@@ -1,0 +1,245 @@
+// Widget-level coverage for the schema browser: the three modes, filtering,
+// and the table inspector.
+//
+//   flutter test test/schema_view_test.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import 'package:flutter_sql_converter/models/schema_relationship.dart';
+import 'package:flutter_sql_converter/services/schema_service.dart';
+import 'package:flutter_sql_converter/views/schema_view.dart';
+import 'package:flutter_sql_converter/widgets/schema_chrome.dart';
+
+/// Table names also appear on data-source pills and in table rows, so filter
+/// chips have to be addressed by their widget, not by their label alone.
+Finder _filterChip(String label) => find.descendant(
+      of: find.byType(SchemaFilterChip),
+      matching: find.text(label),
+    );
+
+const String _dataSources = '''
+<Application><DataSourceRepository><DataObjects>
+  <DataObject id="1" name="dJobs" PhysicalName="dJobs" data_source="MyFlo">
+    <Columns>
+      <Column id="1" name="jobID"><DbColumnName val="jobID"/></Column>
+      <Column id="7" name="jobCustomer"><DbColumnName val="jobCustomer"/></Column>
+    </Columns>
+  </DataObject>
+  <DataObject id="5" name="mCustomers" PhysicalName="mCustomers" data_source="MyFlo">
+    <Columns>
+      <Column id="3" name="cusCode"><DbColumnName val="cusCode"/></Column>
+    </Columns>
+  </DataObject>
+  <DataObject id="9" name="oScratchPad" PhysicalName="oScratchPad" data_source="Memory">
+    <Columns>
+      <Column id="1" name="tmpValue"><DbColumnName val="tmpValue"/></Column>
+    </Columns>
+  </DataObject>
+</DataObjects></DataSourceRepository></Application>
+''';
+
+final SchemaGraph _graph = SchemaGraph.from(
+  const [
+    SchemaRelationship(
+      fromTable: 'dJobs',
+      fromColumn: 'jobCustomer',
+      toTable: 'mCustomers',
+      toColumn: 'cusCode',
+      programs: ['Job Entry', 'Batch Reprice'],
+    ),
+  ],
+  programFiles: const {'Job Entry': 'Prg_10.xml'},
+);
+
+Future<void> _pumpSchemaView(
+  WidgetTester tester, {
+  SchemaGraph? graph,
+  void Function(String programName)? onOpenProgram,
+  bool isScanning = false,
+}) async {
+  final schema = SchemaService()..parseDataSourcesString(_dataSources);
+
+  tester.view.physicalSize = const Size(1600, 1100);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(MaterialApp(
+    theme: ThemeData(brightness: Brightness.dark),
+    home: Scaffold(
+      body: SchemaView(
+        schemaService: schema,
+        graph: graph ?? _graph,
+        isScanning: isScanning,
+        scanDone: 0,
+        scanTotal: 0,
+        onRescan: () {},
+        onOpenProgram: onOpenProgram,
+      ),
+    ),
+  ));
+  // The scan indicator spins forever, so a settle would never return.
+  if (isScanning) {
+    await tester.pump();
+  } else {
+    await tester.pumpAndSettle();
+  }
+}
+
+void main() {
+  setUpAll(() {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    GoogleFonts.config.allowRuntimeFetching = false;
+  });
+
+  testWidgets('cards view lists every table with its relationship count',
+      (tester) async {
+    await _pumpSchemaView(tester);
+
+    expect(find.text('dJobs'), findsOneWidget);
+    expect(find.text('mCustomers'), findsOneWidget);
+    expect(find.text('oScratchPad'), findsOneWidget);
+
+    // dJobs points at mCustomers, so both ends show one relationship.
+    expect(find.text('1 relationship'), findsNWidgets(2));
+    expect(find.text('3 tables'), findsOneWidget);
+    expect(find.text('1 link'), findsOneWidget);
+  });
+
+  testWidgets('search narrows the tables to matches on name or column',
+      (tester) async {
+    await _pumpSchemaView(tester);
+
+    await tester.enterText(find.byType(TextField).first, 'cusCode');
+    await tester.pumpAndSettle();
+
+    expect(find.text('mCustomers'), findsOneWidget);
+    expect(find.text('dJobs'), findsNothing);
+  });
+
+  testWidgets('the source filter keeps only tables on that connection',
+      (tester) async {
+    await _pumpSchemaView(tester);
+
+    await tester.tap(_filterChip('Memory'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('oScratchPad'), findsOneWidget);
+    expect(find.text('dJobs'), findsNothing);
+  });
+
+  testWidgets('the prefix filter keeps only tables of that role',
+      (tester) async {
+    await _pumpSchemaView(tester);
+
+    await tester.tap(_filterChip('m · Master'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('mCustomers'), findsOneWidget);
+    expect(find.text('dJobs'), findsNothing);
+    expect(find.text('oScratchPad'), findsNothing);
+  });
+
+  testWidgets('the list view shows physical names and counts', (tester) async {
+    await _pumpSchemaView(tester);
+
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('PHYSICAL NAME'), findsOneWidget);
+    expect(find.text('RELATIONSHIPS'), findsOneWidget);
+    // The logical and physical names of dJobs are the same, so the row prints
+    // it in both columns.
+    expect(find.text('dJobs'), findsNWidgets(2));
+  });
+
+  testWidgets('the programs view shows what a program links', (tester) async {
+    await _pumpSchemaView(tester);
+
+    await tester.tap(find.text('Programs'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 programs with relationships'), findsOneWidget);
+    expect(
+      find.text('Select a program to see the tables it links.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Batch Reprice'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('FROM COLUMN'), findsOneWidget);
+    expect(find.text('jobCustomer'), findsOneWidget);
+    expect(find.text('cusCode'), findsOneWidget);
+  });
+
+  testWidgets('opening a table shows its columns and its relationships',
+      (tester) async {
+    await _pumpSchemaView(tester);
+
+    await tester.tap(find.text('dJobs'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('References'), findsOneWidget);
+    expect(find.text('DB COLUMN'), findsOneWidget);
+    // Both programs that use the link are named.
+    expect(find.text('Job Entry'), findsOneWidget);
+    expect(find.text('Batch Reprice'), findsOneWidget);
+  });
+
+  testWidgets('following a relationship moves the inspector to that table',
+      (tester) async {
+    await _pumpSchemaView(tester);
+
+    await tester.tap(find.text('dJobs'));
+    await tester.pumpAndSettle();
+
+    // The dialog's own heading, plus the pill naming the far end of the link.
+    await tester.tap(find.text('mCustomers').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Referenced by'), findsOneWidget);
+    expect(find.text('References'), findsNothing);
+  });
+
+  testWidgets('a table with no links says so rather than showing an empty list',
+      (tester) async {
+    await _pumpSchemaView(tester);
+
+    await tester.tap(find.text('oScratchPad'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('the scan found no relationships'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a program chip hands the program to the generator',
+      (tester) async {
+    String? opened;
+    await _pumpSchemaView(tester, onOpenProgram: (name) => opened = name);
+
+    await tester.tap(find.text('dJobs'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Job Entry'));
+    await tester.pumpAndSettle();
+
+    expect(opened, 'Job Entry');
+  });
+
+  testWidgets('the browser stays usable while the scan is still running',
+      (tester) async {
+    await _pumpSchemaView(
+      tester,
+      graph: SchemaGraph.empty,
+      isScanning: true,
+    );
+
+    expect(
+      find.textContaining('Scanning program logic for table relationships'),
+      findsOneWidget,
+    );
+    expect(find.text('dJobs'), findsOneWidget);
+  });
+}
