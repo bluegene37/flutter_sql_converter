@@ -342,13 +342,13 @@ void main() {
     await tester.pumpWidget(const UniPaasConverterApp());
     await tester.pump(const Duration(milliseconds: 300));
 
-    final infoButton = find.byTooltip('About UniPaaS SQL Generator');
+    final infoButton = find.byTooltip('About MagicSoftSQL');
     expect(infoButton, findsOneWidget);
 
     await tester.tap(infoButton);
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('UniPaaS SQL Generator'), findsWidgets);
+    expect(find.text('MagicSoftSQL'), findsWidgets);
     expect(find.text('v1.0.0'), findsOneWidget);
     expect(find.text('KEYBOARD SHORTCUTS'), findsOneWidget);
     expect(find.text('Done'), findsOneWidget);

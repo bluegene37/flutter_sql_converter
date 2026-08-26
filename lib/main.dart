@@ -26,7 +26,7 @@ class _UniPaasConverterAppState extends State<UniPaasConverterApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'UniPaaS SQL Generator',
+      title: 'MagicSoftSQL',
       debugShowCheckedModeBanner: false,
       themeMode: _themeMode,
       theme: ThemeData(

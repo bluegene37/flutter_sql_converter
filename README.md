@@ -1,7 +1,7 @@
-# UniPaaS SQL Generator
+# MagicSoftSQL
 
 <p align="center">
-  <img src="assets/logo.png" alt="UniPaaS SQL Generator Logo" width="128" height="128" />
+  <img src="assets/logo.png" alt="MagicSoftSQL Logo" width="128" height="128" />
 </p>
 
 [![Version](https://img.shields.io/badge/version-1.0.0-06B6D4?style=flat-square)](https://github.com/your-org/flutter_sql_converter)
@@ -99,22 +99,27 @@ flutter run -d windows
 
 ### Production Release Packaging
 
-#### macOS Release Build
-```bash
-# Build optimized release application bundle
-flutter build macos --release
+See [RELEASING.md](RELEASING.md) for the full release guide (versioning,
+CI, code signing). Pushing a `v*` tag builds and publishes both installers
+automatically via [GitHub Actions](.github/workflows/release.yml).
 
-# Output path:
-# build/macos/Build/Products/Release/UniPaaS SQL Generator.app
+#### macOS — DMG
+```bash
+# Builds the release .app and packages a drag-to-install DMG
+bash scripts/build_macos_dmg.sh
+
+# Output: build/MagicSoftSQL-<version>.dmg
+# (raw app: build/macos/Build/Products/Release/MagicSoftSQL.app)
 ```
 
-#### Windows Release Build
+#### Windows — Installer (setup.exe)
 ```bash
-# Build optimized release executable and assets
+# On Windows, with Inno Setup 6 installed (winget install JRSoftware.InnoSetup)
 flutter build windows --release
+dart run inno_bundle:build --release --no-app
 
-# Output path:
-# build/windows/x64/runner/Release/
+# Output: build/windows/x64/installer/*.exe
+# Optional MSIX package (Microsoft Store / enterprise): dart run msix:create
 ```
 
 ---
@@ -135,5 +140,5 @@ flutter analyze
 
 ## 📄 License & Copyright
 
-Copyright © 2026 UniPaaS Tools. All rights reserved.
+Copyright © 2026 Genexis. All rights reserved.
 Proprietary and confidential software.

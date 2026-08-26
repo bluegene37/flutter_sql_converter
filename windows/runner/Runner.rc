@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "UniPaaS Tools" "\0"
-            VALUE "FileDescription", "UniPaaS SQL Generator" "\0"
+            VALUE "CompanyName", "Genexis" "\0"
+            VALUE "FileDescription", "MagicSoftSQL" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "flutter_sql_converter" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 UniPaaS Tools. All rights reserved." "\0"
-            VALUE "OriginalFilename", "flutter_sql_converter.exe" "\0"
-            VALUE "ProductName", "UniPaaS SQL Generator" "\0"
+            VALUE "InternalName", "magicsoftsql" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Genexis. All rights reserved." "\0"
+            VALUE "OriginalFilename", "magicsoftsql.exe" "\0"
+            VALUE "ProductName", "MagicSoftSQL" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -1,5 +1,5 @@
 name: flutter_sql_converter
-description: "A high-performance desktop UniPaaS/XPA to Microsoft SQL Server (T-SQL) generator and schema relationship explorer"
+description: "A high-performance desktop workbench that converts Magic UniPaaS/XPA program repositories into Microsoft SQL Server (T-SQL) queries and explores schema relationships. For Windows and macOS."
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
@@ -16,7 +16,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   xml: ^7.0.1
-  file_picker: ^11.0.2
+  file_picker: ^12.1.1
   google_fonts: ^8.1.0
   shared_preferences: ^2.5.5
 
@@ -25,6 +25,45 @@ dev_dependencies:
     sdk: flutter
 
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  msix: ^3.16.7
+  inno_bundle: ^0.12.0
+
+# App icons for Windows/macOS — regenerate with:
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/icon/app_icon.png"
+
+# MSIX package (Microsoft Store / enterprise deployment) — build with:
+#   dart run msix:create
+# Keep msix_version in sync with version: above (four segments).
+msix_config:
+  display_name: "MagicSoftSQL"
+  publisher_display_name: "Genexis"
+  identity_name: "dev.genexis.magicsoftsql"
+  msix_version: "1.0.0.0"
+  logo_path: "windows/runner/resources/app_icon.ico"
+  capabilities: "internetClient"
+
+# Inno Setup installer (setup.exe for direct distribution) — build on Windows with:
+#   flutter build windows --release
+#   dart run inno_bundle:build --release --no-app
+# Output: build/windows/x64/installer/
+inno_bundle:
+  id: "382E5891-375B-4E2D-886C-20EAE6BE2006" # installer AppId — never change or reuse
+  name: "MagicSoftSQL"
+  publisher: "Genexis"
+  installer_icon: "windows/runner/resources/app_icon.ico"
+  admin: "auto"
+  languages:
+    - "english"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

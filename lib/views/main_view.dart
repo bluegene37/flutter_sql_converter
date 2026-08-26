@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -812,15 +813,19 @@ class _MainViewState extends State<MainView> {
       final defaultName = _selectedProgramMeta != null
           ? '${_selectedProgramMeta!.name.replaceAll(RegExp(r'[^\w\s-]'), '_')}.sql'
           : 'query.sql';
-      final savePath = await FilePicker.saveFile(
+      // file_picker >= 12 writes the bytes itself and returns the saved
+      // location as a Uri (a content:// Uri on Android, file:// elsewhere).
+      final savedUri = await FilePicker.saveFile(
         dialogTitle: 'Export SQL Query',
         fileName: defaultName,
+        bytes: Uint8List.fromList(utf8.encode(_generatedSql)),
+        mimeType: 'application/sql',
         type: FileType.custom,
         allowedExtensions: ['sql'],
       );
-      if (savePath != null) {
-        final file = File(savePath);
-        await file.writeAsString(_generatedSql);
+      if (savedUri != null) {
+        final savePath =
+            savedUri.scheme == 'file' ? savedUri.toFilePath() : defaultName;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1181,7 +1186,7 @@ class _MainViewState extends State<MainView> {
               _HeaderButton(
                 icon: Icons.info_outline,
                 iconColor: colors.textSecondary,
-                tooltip: 'About UniPaaS SQL Generator',
+                tooltip: 'About MagicSoftSQL',
                 onTap: _showAboutAppDialog,
               ),
             ],
@@ -1232,7 +1237,7 @@ class _MainViewState extends State<MainView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'UniPaaS SQL Generator',
+                    'MagicSoftSQL',
                     style: GoogleFonts.outfit(
                       color: colors.textPrimary,
                       fontSize: 18,
