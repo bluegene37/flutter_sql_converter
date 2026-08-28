@@ -6,10 +6,17 @@
 // google_fonts cannot fetch Fira Code in a test, so the goldens draw with a
 // fallback face and the glyphs are blocks. That is fine for what these guard:
 // which colour each kind of token gets, and that the gutter stays aligned.
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_sql_converter/widgets/sql_view.dart';
+
+// The goldens were generated on macOS; Windows rasterizes the fallback face
+// differently (~7% pixel diff on the release runner), so the comparison only
+// holds on the platform that drew them.
+final _skipGoldens = !Platform.isMacOS;
 
 const _sample = '''-- ============================================================================
 -- Program: hasCancelledJobTriggerTypeItem (source/Prg_9408.xml)
@@ -52,7 +59,7 @@ void main() {
       find.byType(SqlView),
       matchesGoldenFile('goldens/sql_view_dark.png'),
     );
-  });
+  }, skip: _skipGoldens);
 
   testWidgets('query canvas, light', (tester) async {
     await tester.binding.setSurfaceSize(const Size(900, 560));
@@ -62,5 +69,5 @@ void main() {
       find.byType(SqlView),
       matchesGoldenFile('goldens/sql_view_light.png'),
     );
-  });
+  }, skip: _skipGoldens);
 }
