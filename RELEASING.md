@@ -14,8 +14,33 @@ the macOS bundle (`CFBundleShortVersionString`) and the Windows exe metadata
 
 When bumping, also update:
 
+- `AppInfo.appVersion` in [lib/app_info.dart](lib/app_info.dart) — must equal
+  the pubspec version **without** the `+build` suffix (a test enforces this).
+  This is what the in-app update checker compares against release tags: if it
+  lags, the app re-offers the version it already runs.
 - `msix_config: msix_version:` in pubspec.yaml — four segments, e.g. `1.0.1.0`
 - The version badge at the top of README.md
+
+## In-app update checker contract
+
+The app checks `https://api.github.com/repos/bluegene37/flutter_sql_converter/releases/latest`
+(drafts and prereleases are excluded by that endpoint) at most once per 24h,
+and offers the release when its tag outranks `AppInfo.appVersion`. For it to
+work, every release must keep to:
+
+1. **Tags are semver**: `vX.Y.Z`. A non-semver tag (e.g. `nightly`) is
+   ignored by the app but hides newer real releases behind it — don't publish
+   one as the latest release.
+2. **Asset names keep their platform suffixes** (matched case-insensitively):
+   - Windows: `*-Installer.exe` (inno_bundle's default naming) — used for
+     silent in-place upgrade (`/SILENT /CLOSEAPPLICATIONS /NORESTART`).
+   - macOS: `*.dmg` — the app opens the release page for a manual download.
+3. **`AppInfo.appVersion` bumped in lockstep with pubspec.yaml** (see above).
+4. The updater ships **with the next release users install** — installs made
+   before it existed obviously never self-update.
+5. The repo is public, so the GitHub API needs no auth. If it ever goes
+   private, the updater breaks — do not embed a token in the app; rethink the
+   feed instead (e.g. a public releases-only mirror).
 
 ## Release steps
 

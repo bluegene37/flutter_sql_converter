@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'services/update/update_controller.dart';
 import 'views/main_view.dart';
+import 'widgets/update_gate.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +18,13 @@ class UniPaasConverterApp extends StatefulWidget {
 
 class _UniPaasConverterAppState extends State<UniPaasConverterApp> {
   ThemeMode _themeMode = ThemeMode.dark;
+  final UpdateController _updateController = UpdateController();
+
+  @override
+  void dispose() {
+    _updateController.dispose();
+    super.dispose();
+  }
 
   void _toggleTheme() {
     setState(() {
@@ -71,7 +80,15 @@ class _UniPaasConverterAppState extends State<UniPaasConverterApp> {
         ),
         useMaterial3: true,
       ),
-      home: MainView(onToggleTheme: _toggleTheme),
+      // MainView is the app's stable root (never pushReplaced), so the gate
+      // mounts exactly once and sits below the MaterialApp Navigator.
+      home: UpdateGate(
+        controller: _updateController,
+        child: MainView(
+          onToggleTheme: _toggleTheme,
+          updateController: _updateController,
+        ),
+      ),
     );
   }
 }

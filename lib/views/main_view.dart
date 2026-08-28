@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../app_info.dart';
 import '../models/schema_relationship.dart';
 import '../models/unipaas_models.dart';
 import '../services/relationship_scanner_service.dart';
@@ -12,10 +13,12 @@ import '../services/schema_service.dart';
 import '../services/xml_parser_service.dart';
 import '../services/sql_generator_service.dart';
 import '../services/settings_service.dart';
+import '../services/update/update_controller.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/drag_handle.dart';
 import '../widgets/sql_view.dart';
+import '../widgets/update_check_button.dart';
 import 'schema_view.dart';
 
 /// The two things the app does: turn a program into SQL, and show how the
@@ -24,8 +27,9 @@ enum AppMode { generator, schema }
 
 class MainView extends StatefulWidget {
   final VoidCallback onToggleTheme;
+  final UpdateController? updateController;
 
-  const MainView({super.key, required this.onToggleTheme});
+  const MainView({super.key, required this.onToggleTheme, this.updateController});
 
   @override
   State<MainView> createState() => _MainViewState();
@@ -1182,6 +1186,12 @@ class _MainViewState extends State<MainView> {
               ),
               const SizedBox(width: 8),
 
+              // Check for Updates Button
+              if (widget.updateController != null) ...[
+                UpdateCheckButton(controller: widget.updateController!),
+                const SizedBox(width: 8),
+              ],
+
               // About App Button
               _HeaderButton(
                 icon: Icons.info_outline,
@@ -1255,7 +1265,7 @@ class _MainViewState extends State<MainView> {
                           border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
                         ),
                         child: Text(
-                          'v1.0.0',
+                          'v${AppInfo.appVersion}',
                           style: GoogleFonts.firaCode(
                             color: colors.accent,
                             fontSize: 11,
