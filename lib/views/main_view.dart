@@ -1058,11 +1058,11 @@ class _MainViewState extends State<MainView> {
                     height: 32,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
+                        colors: [Color(0xFFF2EDE3), Color(0xFFE7E0D0)],
                       ),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(Icons.data_object, color: Colors.white, size: 18),
+                    child: const Icon(Icons.data_object, color: Color(0xFF16161A), size: 18),
                   ),
                 ),
               ),
@@ -1233,11 +1233,11 @@ class _MainViewState extends State<MainView> {
                   height: 40,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF06B6D4), Color(0xFF3B82F6)],
+                      colors: [Color(0xFFF2EDE3), Color(0xFFE7E0D0)],
                     ),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.data_object, color: Colors.white, size: 24),
+                  child: const Icon(Icons.data_object, color: Color(0xFF16161A), size: 24),
                 ),
               ),
             ),

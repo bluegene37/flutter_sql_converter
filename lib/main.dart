@@ -40,16 +40,16 @@ class _UniPaasConverterAppState extends State<UniPaasConverterApp> {
       themeMode: _themeMode,
       theme: ThemeData(
         brightness: Brightness.light,
-        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-        primaryColor: const Color(0xFF0891B2),
+        scaffoldBackgroundColor: const Color(0xFFF2EDE3),
+        primaryColor: const Color(0xFFB4402C),
         colorScheme: const ColorScheme.light(
-          primary: Color(0xFF0891B2),
-          secondary: Color(0xFF2563EB),
-          surface: Color(0xFFFFFFFF),
+          primary: Color(0xFFB4402C),
+          secondary: Color(0xFF8E3122),
+          surface: Color(0xFFFAF7F0),
         ),
         textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme),
         snackBarTheme: SnackBarThemeData(
-          backgroundColor: const Color(0xFF0F172A),
+          backgroundColor: const Color(0xFF2B2B2E),
           contentTextStyle: GoogleFonts.inter(
             color: Colors.white,
             fontSize: 13,

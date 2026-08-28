@@ -175,53 +175,55 @@ class AppColors {
     snackbarText: Colors.white,
   );
 
+  // Light mode follows the genexis.dev "paper & ink" palette: warm cream
+  // surfaces, near-black ink text, terracotta accent.
   static const light = AppColors._(
     brightness: Brightness.light,
-    scaffoldBg: Color(0xFFF8FAFC),
-    headerBg: Color(0xFFFFFFFF),
-    panelBg: Color(0xFFF1F5F9),
-    cardBg: Color(0xFFFFFFFF),
-    codeBg: Color(0xFFF8FAFC),
-    border: Color(0xFFE2E8F0),
-    borderSubtle: Color(0xFFCBD5E1),
-    textPrimary: Color(0xFF0F172A),
-    textSecondary: Color(0xFF64748B),
-    textMuted: Color(0xFF94A3B8),
-    textOnAccent: Colors.white,
-    accent: Color(0xFF0891B2),
-    accentSecondary: Color(0xFF2563EB),
-    accentIcon: Color(0xFF0284C7),
-    sqlText: Color(0xFF0F172A),
-    syntaxKeyword: Color(0xFF0369A1),
-    syntaxString: Color(0xFFB45309),
-    syntaxParam: Color(0xFF7C3AED),
-    syntaxNumber: Color(0xFFC2410C),
-    syntaxComment: Color(0xFF94A3B8),
-    syntaxCommentStrong: Color(0xFF64748B),
-    syntaxPunctuation: Color(0xFF94A3B8),
-    gutterText: Color(0xFFB6C2D2),
-    gutterLine: Color(0xFFE2E8F0),
-    statTasks: Color(0xFF0E7490),
-    statJoins: Color(0xFF7C3AED),
-    successBg: Color(0xFFDCFCE7),
-    successBorder: Color(0xFF16A34A),
-    successText: Color(0xFF15803D),
-    selectedBg: Color(0xFFE0F2FE),
-    selectedBorder: Color(0xFF0891B2),
-    hoverBg: Color(0xFFE2E8F0),
-    chipBg: Color(0xFFE2E8F0),
-    disabledBg: Color(0xFFE2E8F0),
-    paramBadgeBg: Color(0xFFDBEAFE),
-    paramBadgeBorder: Color(0xFF93C5FD),
-    paramBadgeText: Color(0xFF1E40AF),
-    varBadgeBg: Color(0xFFF1F5F9),
-    varBadgeBorder: Color(0xFFCBD5E1),
-    varBadgeText: Color(0xFF475569),
-    inputBg: Color(0xFFFFFFFF),
-    inputHint: Color(0xFF94A3B8),
-    inputFocusBorder: Color(0xFF0891B2),
-    snackbarBg: Color(0xFF0F172A),
-    snackbarText: Colors.white,
+    scaffoldBg: Color(0xFFF2EDE3), // paper
+    headerBg: Color(0xFFFAF7F0), // paper-raised
+    panelBg: Color(0xFFE7E0D0), // paper-deep
+    cardBg: Color(0xFFFAF7F0),
+    codeBg: Color(0xFFFAF7F0),
+    border: Color(0xFFDED6C4), // paper-recess
+    borderSubtle: Color(0xFFC7BEA9),
+    textPrimary: Color(0xFF16161A), // ink
+    textSecondary: Color(0xFF5A564E), // ink-soft
+    textMuted: Color(0xFF9A9384),
+    textOnAccent: Color(0xFFFAF7F0),
+    accent: Color(0xFFB4402C), // lead
+    accentSecondary: Color(0xFF8E3122), // lead-deep
+    accentIcon: Color(0xFFB4402C),
+    sqlText: Color(0xFF16161A),
+    syntaxKeyword: Color(0xFF8E3122),
+    syntaxString: Color(0xFF79740E),
+    syntaxParam: Color(0xFF8F3F71),
+    syntaxNumber: Color(0xFFAF3A03),
+    syntaxComment: Color(0xFF9A9384),
+    syntaxCommentStrong: Color(0xFF66625A), // graphite
+    syntaxPunctuation: Color(0xFF9A9384),
+    gutterText: Color(0xFFB5AD9A),
+    gutterLine: Color(0xFFDED6C4),
+    statTasks: Color(0xFF8E3122),
+    statJoins: Color(0xFF8F3F71),
+    successBg: Color(0xFFE5E8D3),
+    successBorder: Color(0xFF7B8447),
+    successText: Color(0xFF556130),
+    selectedBg: Color(0xFFEFDCD3), // lead-wash over paper
+    selectedBorder: Color(0xFFB4402C),
+    hoverBg: Color(0xFFE7E0D0),
+    chipBg: Color(0xFFE7E0D0),
+    disabledBg: Color(0xFFE7E0D0),
+    paramBadgeBg: Color(0xFFF2DDD5),
+    paramBadgeBorder: Color(0xFFD9A08F),
+    paramBadgeText: Color(0xFF8E3122),
+    varBadgeBg: Color(0xFFE7E0D0),
+    varBadgeBorder: Color(0xFFC7BEA9),
+    varBadgeText: Color(0xFF5A564E),
+    inputBg: Color(0xFFFAF7F0),
+    inputHint: Color(0xFF9A9384),
+    inputFocusBorder: Color(0xFFB4402C),
+    snackbarBg: Color(0xFF2B2B2E), // crease
+    snackbarText: Color(0xFFFAF7F0),
   );
 
   /// Get the [AppColors] for the current theme brightness.
