@@ -19,6 +19,7 @@ import '../utils/format.dart';
 import '../widgets/drag_handle.dart';
 import '../widgets/sql_view.dart';
 import '../widgets/update_check_button.dart';
+import 'dialogs/user_manual_dialog.dart';
 import 'schema_view.dart';
 
 /// The two things the app does: turn a program into SQL, and show how the
@@ -907,6 +908,19 @@ class _MainViewState extends State<MainView> {
     final colors = AppColors.of(context);
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.f1): _openUserManual,
+        const SingleActivator(LogicalKeyboardKey.slash, meta: true, shift: true):
+            _openUserManual,
+        const SingleActivator(LogicalKeyboardKey.slash, control: true, shift: true):
+            _openUserManual,
+        const SingleActivator(LogicalKeyboardKey.slash, meta: true):
+            _openUserManual,
+        const SingleActivator(LogicalKeyboardKey.slash, control: true):
+            _openUserManual,
+        const SingleActivator(LogicalKeyboardKey.question, meta: true):
+            _openUserManual,
+        const SingleActivator(LogicalKeyboardKey.question, control: true):
+            _openUserManual,
         const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
             _focusSearch,
         const SingleActivator(LogicalKeyboardKey.keyF, control: true):
@@ -987,6 +1001,12 @@ class _MainViewState extends State<MainView> {
   void _exportSqlShortcut() {
     if (_mode != AppMode.generator) return;
     if (_canGenerate && _generatedSql.isNotEmpty) _exportSqlToFile();
+  }
+
+  void _openUserManual({String? topicId}) {
+    final effectiveTopicId = topicId ??
+        (_mode == AppMode.schema ? 'schema_browser' : 'getting_started');
+    UserManualDialog.show(context, initialTopicId: effectiveTopicId);
   }
 
   Widget _buildGeneratorBody() {
@@ -1177,6 +1197,16 @@ class _MainViewState extends State<MainView> {
               ),
               const SizedBox(width: 8),
 
+              // User Manual / Knowledge Base Button
+              _HeaderButton(
+                icon: Icons.menu_book_outlined,
+                iconColor: colors.textSecondary,
+                label: isCompact ? null : 'Manual',
+                tooltip: 'User Guide & Manual (F1)',
+                onTap: _openUserManual,
+              ),
+              const SizedBox(width: 8),
+
               // Theme Toggle
               _HeaderButton(
                 icon: colors.isDark ? Icons.light_mode : Icons.dark_mode,
@@ -1324,6 +1354,7 @@ class _MainViewState extends State<MainView> {
                       ),
                     ),
                     const SizedBox(height: 6),
+                    _buildAboutShortcutRow(colors, 'F1 or Cmd / Ctrl + ?', 'User Manual & Help Center'),
                     _buildAboutShortcutRow(colors, 'Cmd / Ctrl + G or Enter', 'Generate SQL Query'),
                     _buildAboutShortcutRow(colors, 'Cmd / Ctrl + F', 'Focus Search Field'),
                     _buildAboutShortcutRow(colors, 'Cmd / Ctrl + S', 'Export SQL to .sql file'),
@@ -1357,6 +1388,26 @@ class _MainViewState extends State<MainView> {
           ),
         ),
         actions: [
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _openUserManual();
+            },
+            icon: Icon(Icons.menu_book_outlined, size: 15, color: colors.accent),
+            label: Text(
+              'User Manual (F1)',
+              style: GoogleFonts.inter(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: colors.accent,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: colors.accent.withValues(alpha: 0.4)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+            ),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context),
             style: ElevatedButton.styleFrom(
