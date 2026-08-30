@@ -62,7 +62,9 @@ class _MainViewState extends State<MainView> {
   /// relationship scan needs them to turn object ids into names.
   Future<void>? _schemaMetadataReady;
 
-  String _sourceDirectory = '/Users/bluegene37/StudioProjects/flutter_sql_converter/source';
+  // Resolved in _initApp from the saved setting, then a `source` folder next
+  // to the app. Never seed this with a machine-specific absolute path.
+  String _sourceDirectory = '';
   List<ProgramMetadata> _filteredPrograms = [];
   ProgramMetadata? _selectedProgramMeta;
   ParsedProgram? _parsedProgram;
@@ -138,15 +140,12 @@ class _MainViewState extends State<MainView> {
     if (savedDir != null && savedDir.isNotEmpty && Directory(savedDir).existsSync()) {
       _sourceDirectory = savedDir;
     } else {
+      // Only fall back to a folder next to the running app. Absolute
+      // developer-machine paths must not ship: on someone else's disk they
+      // silently point the app at whatever happens to sit at that path.
       final workspaceSource = '${Directory.current.path}/source';
       if (Directory(workspaceSource).existsSync()) {
         _sourceDirectory = workspaceSource;
-      } else if (Directory('/Users/bluegene37/StudioProjects/flutter_sql_converter/source').existsSync()) {
-        _sourceDirectory = '/Users/bluegene37/StudioProjects/flutter_sql_converter/source';
-      } else if (Directory('/Users/myFlo_unipaas/source').existsSync()) {
-        _sourceDirectory = '/Users/myFlo_unipaas/source';
-      } else if (Directory(r'c:\Data\MV101Apps\MyFlo\source').existsSync()) {
-        _sourceDirectory = r'c:\Data\MV101Apps\MyFlo\source';
       }
     }
 
@@ -1772,10 +1771,15 @@ class _MainViewState extends State<MainView> {
                   : null,
             ),
             SizedBox(
-              width: 30,
+              // Wide enough for the highest repository position we can render
+              // ("#99999"); at 30 a 4-digit position wrapped and read as a
+              // different, smaller number.
+              width: 40,
               child: Text(
                 '#${_programNumber(prog, index)}',
                 textAlign: TextAlign.right,
+                maxLines: 1,
+                softWrap: false,
                 style: GoogleFonts.firaCode(
                   color: isDisabled
                       ? colors.textMuted.withValues(alpha: 0.5)
@@ -2408,6 +2412,9 @@ class _MainViewState extends State<MainView> {
                 _generateSql();
               }
             },
+            // The manual and the About sheet both tell the user Enter
+            // re-synthesizes the query from here, so honour it.
+            onSubmitted: (_) => _generateSqlShortcut(),
             style: GoogleFonts.firaCode(color: colors.textPrimary, fontSize: 12),
             decoration: InputDecoration(
               hintText: 'NULL',
