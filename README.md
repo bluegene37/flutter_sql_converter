@@ -4,7 +4,7 @@
   <img src="assets/logo.png" alt="MagicSoftSQL Logo" width="128" height="128" />
 </p>
 
-[![Version](https://img.shields.io/badge/version-1.0.0-06B6D4?style=flat-square)](https://github.com/your-org/flutter_sql_converter)
+[![Version](https://img.shields.io/badge/version-1.0.1-06B6D4?style=flat-square)](https://github.com/your-org/flutter_sql_converter)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&style=flat-square)](https://flutter.dev)
 [![Dart](https://img.shields.io/badge/Dart-3.x-0175C2?logo=dart&style=flat-square)](https://dart.dev)
 [![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-3B82F6?style=flat-square)](#)

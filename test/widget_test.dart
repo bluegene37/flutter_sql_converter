@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_sql_converter/app_info.dart';
 import 'package:flutter_sql_converter/main.dart';
 import 'package:flutter_sql_converter/models/unipaas_models.dart';
 import 'package:flutter_sql_converter/services/schema_service.dart';
@@ -334,7 +335,7 @@ void main() {
     }
   });
 
-  testWidgets('App displays header logo and opens About Dialog with version 1.0.0 info', (WidgetTester tester) async {
+  testWidgets('App displays header logo and opens About Dialog with version info', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -349,7 +350,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('MagicSoftSQL'), findsWidgets);
-    expect(find.text('v1.0.0'), findsOneWidget);
+    expect(find.text('v${AppInfo.appVersion}'), findsOneWidget);
     expect(find.text('KEYBOARD SHORTCUTS'), findsOneWidget);
     expect(find.text('Done'), findsOneWidget);
 
