@@ -125,6 +125,39 @@ if ($CreateSelfSigned) {
 $signtool = Find-SignTool
 Write-Host "Using SignTool: $signtool" -ForegroundColor Gray
 
+# If a certificate path is provided, import it into the Windows Certificate Store
+# so SignTool can resolve it reliably via CryptoAPI / SHA1 thumbprint across all PFX formats.
+$resolvedCertPath = $null
+if ($CertPath) {
+    if (-not (Test-Path $CertPath)) {
+        throw "Certificate file not found: $CertPath"
+    }
+    $resolvedCertPath = (Resolve-Path $CertPath).Path
+
+    try {
+        $secPassword = if (-not [string]::IsNullOrEmpty($CertPassword)) {
+            ConvertTo-SecureString -String $CertPassword -AsPlainText -Force
+        } else {
+            $null
+        }
+
+        $importParams = @{
+            FilePath = $resolvedCertPath
+            CertStoreLocation = "Cert:\CurrentUser\My"
+            Exportable = $true
+        }
+        if ($secPassword) {
+            $importParams["Password"] = $secPassword
+        }
+
+        $importedCert = Import-PfxCertificate @importParams
+        $CertThumbprint = $importedCert.Thumbprint
+        Write-Host "Successfully imported certificate into CurrentUser\My (Thumbprint: $CertThumbprint)" -ForegroundColor Green
+    } catch {
+        Write-Warning "Could not import PFX to certificate store ($($_.Exception.Message)). Attempting direct file signing."
+    }
+}
+
 # Determine files to sign
 $filesToSign = @()
 
@@ -172,16 +205,13 @@ foreach ($file in $filesToSign) {
         $signArgs += @("/tr", $TimestampServer, "/td", "sha256")
     }
 
-    if ($CertPath) {
-        if (-not (Test-Path $CertPath)) {
-            throw "Certificate file not found: $CertPath"
-        }
-        $signArgs += @("/f", (Resolve-Path $CertPath).Path)
-        if ($CertPassword) {
+    if ($CertThumbprint) {
+        $signArgs += @("/sha1", $CertThumbprint, "/s", "My")
+    } elseif ($resolvedCertPath) {
+        $signArgs += @("/f", $resolvedCertPath)
+        if (-not [string]::IsNullOrEmpty($CertPassword)) {
             $signArgs += @("/p", $CertPassword)
         }
-    } elseif ($CertThumbprint) {
-        $signArgs += @("/sha1", $CertThumbprint, "/s", "My")
     } else {
         # Try automatic store selection
         $signArgs += @("/a")
