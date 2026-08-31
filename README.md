@@ -140,5 +140,5 @@ flutter analyze
 
 ## 📄 License & Copyright
 
-Copyright © 2026 Genexis. All rights reserved.
+Copyright © 2026 genexis.dev. All rights reserved.
 Proprietary and confidential software.

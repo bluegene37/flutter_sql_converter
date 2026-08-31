@@ -47,10 +47,10 @@ flutter_launcher_icons:
 # To sign with a certificate:
 #   certificate_path: "path/to/cert.pfx"
 #   certificate_password: "password"
-#   publisher: "CN=Genexis, O=Genexis" # Must match certificate Subject exactly
+#   publisher: "CN=genexis.dev, O=genexis.dev" # Must match certificate Subject exactly
 msix_config:
   display_name: "MagicSoftSQL"
-  publisher_display_name: "Genexis"
+  publisher_display_name: "genexis.dev"
   identity_name: "dev.genexis.magicsoftsql"
   msix_version: "1.0.4.0"
   logo_path: "windows/runner/resources/app_icon.ico"
@@ -64,7 +64,7 @@ msix_config:
 inno_bundle:
   id: "382E5891-375B-4E2D-886C-20EAE6BE2006" # installer AppId — never change or reuse
   name: "MagicSoftSQL"
-  publisher: "Genexis"
+  publisher: "genexis.dev"
   installer_icon: "windows/runner/resources/app_icon.ico"
   admin: "auto"
   languages:

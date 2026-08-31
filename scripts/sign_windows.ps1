@@ -56,7 +56,7 @@ param (
     [switch]$CreateSelfSigned,
 
     [Parameter(Mandatory = $false)]
-    [string]$Publisher = "CN=Genexis, O=Genexis"
+    [string]$Publisher = "CN=genexis.dev, O=genexis.dev"
 )
 
 $ErrorActionPreference = "Stop"
