@@ -52,7 +52,7 @@ msix_config:
   display_name: "MagicSoftSQL"
   publisher_display_name: "Genexis"
   identity_name: "dev.genexis.magicsoftsql"
-  msix_version: "1.0.2.0"
+  msix_version: "1.0.4.0"
   logo_path: "windows/runner/resources/app_icon.ico"
   capabilities: "internetClient"
 
