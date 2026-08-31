@@ -95,7 +95,8 @@ function Find-SignTool {
 if ($CreateSelfSigned) {
     Write-Host "Creating self-signed code signing certificate for '$Publisher'..." -ForegroundColor Cyan
 
-    $secPassword = ConvertTo-SecureString -String ($CertPassword ? $CertPassword : "Password123!") -AsPlainText -Force
+    $plainPassword = if ($CertPassword) { $CertPassword } else { "Password123!" }
+    $secPassword = ConvertTo-SecureString -String $plainPassword -AsPlainText -Force
     $outCertPath = Join-Path $rootDir "dev_codesign.pfx"
 
     $cert = New-SelfSignedCertificate `
@@ -114,7 +115,9 @@ if ($CreateSelfSigned) {
 
     if (-not $CertPath) {
         $CertPath = $outCertPath
-        $CertPassword = ($CertPassword ? $CertPassword : "Password123!")
+        if (-not $CertPassword) {
+            $CertPassword = "Password123!"
+        }
     }
 }
 
@@ -125,7 +128,7 @@ Write-Host "Using SignTool: $signtool" -ForegroundColor Gray
 # Determine files to sign
 $filesToSign = @()
 
-if ($TargetPath and $TargetPath.Count -gt 0) {
+if ($TargetPath -and $TargetPath.Count -gt 0) {
     foreach ($path in $TargetPath) {
         $resolved = Get-ChildItem -Path $path -ErrorAction SilentlyContinue
         if ($resolved) {
