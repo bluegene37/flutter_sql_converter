@@ -44,9 +44,20 @@ class ProgramParameter {
       name: json['name']?.toString() ?? '',
       type: json['type']?.toString() ?? 'ALPHA',
       isParameter: json['isParameter'] == true,
-      currentValue: '',
+      sourceNote: json['sourceNote']?.toString() ?? '',
+      currentValue: json['currentValue']?.toString() ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'fieldId': fieldId,
+    'colId': colId,
+    'name': name,
+    'type': type,
+    'isParameter': isParameter,
+    'sourceNote': sourceNote,
+    'currentValue': currentValue,
+  };
 
   ProgramParameter copyWith({String? currentValue}) {
     return ProgramParameter(
@@ -86,6 +97,14 @@ class ProgramMetadata {
       hasTables: json['hasTables'] == null ? true : (json['hasTables'] == true),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'filename': filename,
+    'name': name,
+    'parameters': parameters.map((p) => p.toJson()).toList(),
+    'hasTables': hasTables,
+  };
 
   ProgramMetadata copyWith({
     String? id,

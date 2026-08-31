@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../app_info.dart';
 import '../models/schema_relationship.dart';
 import '../models/unipaas_models.dart';
+import '../services/program_cache_service.dart';
 import '../services/relationship_scanner_service.dart';
 import '../services/schema_service.dart';
 import '../services/xml_parser_service.dart';
@@ -42,6 +43,7 @@ class _MainViewState extends State<MainView> {
   final SqlGeneratorService _sqlGeneratorService = SqlGeneratorService();
   final RelationshipScannerService _relationshipScanner =
       RelationshipScannerService();
+  final ProgramCacheService _programCacheService = ProgramCacheService();
 
   AppMode _mode = AppMode.generator;
 
@@ -75,6 +77,7 @@ class _MainViewState extends State<MainView> {
   bool _isLoading = true;
   bool _isGenerating = false;
   bool _injectValues = false;
+  bool _hasSourceChanges = false;
 
   // Panel geometry. Both side panels are draggable because a fixed width is
   // wrong for a window that gets resized all day.
@@ -155,7 +158,43 @@ class _MainViewState extends State<MainView> {
       setState(() => _isLoading = false);
       return;
     }
-    await _scanSourceDirectory();
+
+    final cached = await _programCacheService.readCache(_sourceDirectory);
+    if (cached != null && cached.programs.isNotEmpty) {
+      _schemaService.programs.clear();
+      _schemaService.programs.addAll(cached.programs);
+      _filterPrograms(_searchController.text);
+
+      // Load DataSources.xml in background so relationships and tables remain ready
+      _schemaMetadataReady =
+          _schemaService.loadDataSourcesXmlFromDir(_sourceDirectory).then((_) {
+        return _schemaService.loadComponentsXmlFromDir(_sourceDirectory);
+      }).then((_) {
+        if (mounted) setState(() {});
+      });
+
+      setState(() => _isLoading = false);
+
+      // Check for changes in background (non-blocking)
+      _checkSourceDirectoryChanges(cached.fingerprint);
+    } else {
+      await _scanSourceDirectory();
+    }
+  }
+
+  Future<void> _checkSourceDirectoryChanges(String cachedFingerprint) async {
+    if (_sourceDirectory.isEmpty) return;
+    try {
+      final hasChanges = await _programCacheService.hasChanges(
+        _sourceDirectory,
+        cachedFingerprint,
+      );
+      if (hasChanges && mounted) {
+        setState(() {
+          _hasSourceChanges = true;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _changeSourceDirectory() async {
@@ -452,6 +491,18 @@ class _MainViewState extends State<MainView> {
       _schemaService.programs.addAll(scannedPrograms);
     }
 
+    // Save to disk cache for instant startup on next launch
+    try {
+      final fingerprint = await _programCacheService.computeFingerprint(targetDir);
+      await _programCacheService.writeCache(
+        targetDir,
+        fingerprint,
+        scannedPrograms,
+      );
+    } catch (_) {}
+
+    _hasSourceChanges = false;
+
     _filterPrograms(_searchController.text);
     if (_selectedProgramMeta != null) {
       final newMatch = _schemaService.programs
@@ -499,6 +550,7 @@ class _MainViewState extends State<MainView> {
   Future<void> _rescanAndRefresh() async {
     final currentTask = _selectedTask;
     final currentMeta = _selectedProgramMeta;
+    setState(() => _hasSourceChanges = false);
     await _scanSourceDirectory(showSuccessMessage: true);
     if (currentMeta != null) {
       await _selectProgram(currentMeta, targetTask: currentTask);
@@ -950,6 +1002,7 @@ class _MainViewState extends State<MainView> {
           body: Column(
             children: [
               _buildHeader(),
+              if (_hasSourceChanges) _buildSourceChangesBanner(),
               if (_isLoading)
                 LinearProgressIndicator(
                   color: colors.accent,
@@ -1040,6 +1093,81 @@ class _MainViewState extends State<MainView> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildSourceChangesBanner() {
+    final colors = AppColors.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      decoration: BoxDecoration(
+        color: colors.isDark
+            ? const Color(0xFF2B210A)
+            : const Color(0xFFFEF3C7),
+        border: Border(
+          bottom: BorderSide(
+            color: colors.isDark
+                ? const Color(0xFF785B12)
+                : const Color(0xFFFDE68A),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.sync_problem_outlined,
+            size: 16,
+            color: colors.isDark
+                ? const Color(0xFFFBBF24)
+                : const Color(0xFFB45309),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Changes detected in UniPaaS XML source folder since last scan.',
+              style: GoogleFonts.inter(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: colors.isDark
+                    ? const Color(0xFFFDE68A)
+                    : const Color(0xFF92400E),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: _isLoading ? null : _rescanAndRefresh,
+            icon: const Icon(Icons.refresh, size: 14),
+            label: Text(
+              'Rescan (⌘R)',
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: colors.isDark
+                  ? const Color(0xFFD97706)
+                  : const Color(0xFFF59E0B),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              visualDensity: VisualDensity.compact,
+              elevation: 0,
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16),
+            tooltip: 'Dismiss',
+            color: colors.isDark
+                ? const Color(0xFFFDE68A)
+                : const Color(0xFF92400E),
+            onPressed: () {
+              setState(() => _hasSourceChanges = false);
+            },
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1189,9 +1317,13 @@ class _MainViewState extends State<MainView> {
               // Rescan Button
               _HeaderButton(
                 icon: Icons.refresh,
-                iconColor: colors.textSecondary,
+                iconColor: _hasSourceChanges
+                    ? (colors.isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706))
+                    : colors.textSecondary,
                 label: isCompact ? null : 'Rescan',
-                tooltip: 'Rescan XML folder for new or updated files',
+                tooltip: _hasSourceChanges
+                    ? 'Source files updated — click to rescan (⌘R)'
+                    : 'Rescan XML folder for new or updated files (⌘R)',
                 onTap: _isLoading ? null : _rescanAndRefresh,
               ),
               const SizedBox(width: 8),

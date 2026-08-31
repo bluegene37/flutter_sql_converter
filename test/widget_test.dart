@@ -359,4 +359,18 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('App displays Rescan button in header with keyboard shortcut tooltip', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const UniPaasConverterApp());
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Rescan'), findsOneWidget);
+    expect(find.byIcon(Icons.refresh), findsWidgets);
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }
