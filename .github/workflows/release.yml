@@ -41,10 +41,15 @@ jobs:
             $runnerExe = "build/windows/x64/runner/Release/flutter_sql_converter.exe"
             if (Test-Path $runnerExe) {
               $pass = if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_PASSWORD)) { $env:WINDOWS_CERT_PASSWORD.Trim() } else { $null }
-              if ($pass) {
-                .\scripts\sign_windows.ps1 -CertPath $certPath -CertPassword "$pass" -TargetPath $runnerExe
-              } else {
-                .\scripts\sign_windows.ps1 -CertPath $certPath -TargetPath $runnerExe
+              try {
+                if ($pass) {
+                  .\scripts\sign_windows.ps1 -CertPath $certPath -CertPassword "$pass" -TargetPath $runnerExe
+                } else {
+                  .\scripts\sign_windows.ps1 -CertPath $certPath -TargetPath $runnerExe
+                }
+              } catch {
+                Write-Warning "Application binary signing failed: $($_.Exception.Message)"
+                Write-Warning "Continuing build without signing..."
               }
             }
           } finally {
@@ -72,10 +77,15 @@ jobs:
             $installerExes = Get-ChildItem -Path "build/windows/x64/installer/*.exe"
             $pass = if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERT_PASSWORD)) { $env:WINDOWS_CERT_PASSWORD.Trim() } else { $null }
             foreach ($exe in $installerExes) {
-              if ($pass) {
-                .\scripts\sign_windows.ps1 -CertPath $certPath -CertPassword "$pass" -TargetPath $exe.FullName
-              } else {
-                .\scripts\sign_windows.ps1 -CertPath $certPath -TargetPath $exe.FullName
+              try {
+                if ($pass) {
+                  .\scripts\sign_windows.ps1 -CertPath $certPath -CertPassword "$pass" -TargetPath $exe.FullName
+                } else {
+                  .\scripts\sign_windows.ps1 -CertPath $certPath -TargetPath $exe.FullName
+                }
+              } catch {
+                Write-Warning "Installer signing failed for $($exe.Name): $($_.Exception.Message)"
+                Write-Warning "Continuing release packaging without signing..."
               }
             }
           } finally {

@@ -134,33 +134,79 @@ if ($CertPath) {
     }
     $resolvedCertPath = (Resolve-Path $CertPath).Path
 
-    try {
-        $secPassword = if (-not [string]::IsNullOrEmpty($CertPassword)) {
-            ConvertTo-SecureString -String $CertPassword -AsPlainText -Force
-        } else {
-            $null
-        }
+    $importedCerts = $null
+    $passwordsToTry = @()
+    if (-not [string]::IsNullOrEmpty($CertPassword)) {
+        $passwordsToTry += $CertPassword
+        $unquoted = $CertPassword.Trim('"').Trim("'")
+        if ($unquoted -ne $CertPassword) { $passwordsToTry += $unquoted }
+    }
+    $passwordsToTry += ""
 
-        $importParams = @{
-            FilePath = $resolvedCertPath
-            CertStoreLocation = "Cert:\CurrentUser\My"
-            Exportable = $true
+    foreach ($attemptPass in $passwordsToTry) {
+        try {
+            $secPass = ConvertTo-SecureString -String $attemptPass -AsPlainText -Force
+            $importParams = @{
+                FilePath = $resolvedCertPath
+                CertStoreLocation = "Cert:\CurrentUser\My"
+                Exportable = $true
+                Password = $secPass
+            }
+            $importedCerts = @(Import-PfxCertificate @importParams)
+            if ($importedCerts.Count -gt 0) {
+                Write-Host "Successfully imported certificate into CurrentUser\My" -ForegroundColor Green
+                break
+            }
+        } catch {
+            # Continue trying alternate passwords/formats
         }
-        if ($secPassword) {
-            $importParams["Password"] = $secPassword
-        }
+    }
 
-        $importedCerts = @(Import-PfxCertificate @importParams)
+    # If direct import failed, attempt OpenSSL legacy / PEM conversion if openssl is available
+    if (-not $importedCerts -or $importedCerts.Count -eq 0) {
+        $opensslCmd = Get-Command "openssl" -ErrorAction SilentlyContinue
+        if (-not $opensslCmd) {
+            $gitOpenssl = "${env:ProgramFiles}\Git\usr\bin\openssl.exe"
+            if (Test-Path $gitOpenssl) {
+                $opensslCmd = @{ Source = $gitOpenssl }
+            }
+        }
+        if ($opensslCmd) {
+            try {
+                $tempId = [Guid]::NewGuid().ToString('N')
+                $tempPem = Join-Path $env:TEMP "cert_$tempId.pem"
+                $tempLegacyPfx = Join-Path $env:TEMP "cert_$tempId.pfx"
+                $passArg = if (-not [string]::IsNullOrEmpty($CertPassword)) { $CertPassword } else { "" }
+
+                & $opensslCmd.Source pkcs12 -in $resolvedCertPath -passin "pass:$passArg" -nodes -out $tempPem 2>$null
+                if (Test-Path $tempPem) {
+                    & $opensslCmd.Source pkcs12 -export -in $tempPem -passout "pass:$passArg" -out $tempLegacyPfx -legacy 2>$null
+                    Remove-Item -Force $tempPem -ErrorAction SilentlyContinue
+                    if (Test-Path $tempLegacyPfx) {
+                        $secPass = ConvertTo-SecureString -String $passArg -AsPlainText -Force
+                        $importedCerts = @(Import-PfxCertificate -FilePath $tempLegacyPfx -CertStoreLocation "Cert:\CurrentUser\My" -Password $secPass -Exportable)
+                        Remove-Item -Force $tempLegacyPfx -ErrorAction SilentlyContinue
+                        if ($importedCerts.Count -gt 0) {
+                            Write-Host "Successfully converted and imported certificate via OpenSSL legacy mode" -ForegroundColor Green
+                        }
+                    }
+                }
+            } catch {
+                Write-Warning "OpenSSL legacy conversion attempt failed: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    if ($importedCerts -and $importedCerts.Count -gt 0) {
         $codeCert = $importedCerts | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
-        if (-not $codeCert -and $importedCerts.Count -gt 0) {
+        if (-not $codeCert) {
             $codeCert = $importedCerts[0]
+            Write-Warning "Imported certificate does NOT contain a private key. Code signing may fail if this is a public-only certificate (.cer/.crt)."
         }
-        if ($codeCert) {
-            $CertThumbprint = $codeCert.Thumbprint
-            Write-Host "Successfully imported certificate into CurrentUser\My (Thumbprint: $CertThumbprint)" -ForegroundColor Green
-        }
-    } catch {
-        Write-Warning "Could not import PFX to certificate store ($($_.Exception.Message)). Attempting direct file signing."
+        $CertThumbprint = $codeCert.Thumbprint
+        Write-Host "Using Certificate Thumbprint: $CertThumbprint (Subject: $($codeCert.Subject))" -ForegroundColor Green
+    } else {
+        Write-Warning "Could not import PFX to certificate store. Attempting direct file signing with signtool."
     }
 }
 
