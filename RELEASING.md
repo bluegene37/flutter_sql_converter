@@ -81,20 +81,57 @@ dart run inno_bundle:build --release --no-app
 dart run msix:create
 ```
 
-## Code signing status
+## Code signing
 
-Neither platform is signed yet. Consequences and fixes:
+### Windows
 
-- **macOS**: unsigned apps trigger Gatekeeper. Users must right-click → Open
-  the first time (or `xattr -d com.apple.quarantine`). To fix properly you
-  need an Apple Developer ID certificate ($99/yr) and notarization
-  (`codesign` + `notarytool`); add it to `scripts/build_macos_dmg.sh` once
-  you have the certificate.
-- **Windows**: unsigned installers show a SmartScreen warning. Fix requires
-  an Authenticode/EV certificate, or distributing via the Microsoft Store
-  (MSIX), which signs through the Store.
+The CI release workflow automatically signs the Windows application executable and Inno Setup installer if code-signing secrets are configured in GitHub.
 
-For internal/team distribution the unsigned builds are fine.
+#### 1. Configuring CI signing (GitHub Actions)
+
+Add two repository secrets in **GitHub repo → Settings → Secrets and variables → Actions**:
+
+1. `WINDOWS_CERT_BASE64`: The base64-encoded string of your `.pfx` certificate file.
+   - On Windows PowerShell, encode your PFX file:
+     ```powershell
+     [Convert]::ToBase64String([IO.File]::ReadAllBytes('path\to\cert.pfx')) | Set-Clipboard
+     ```
+   - On macOS/Linux:
+     ```bash
+     base64 -i path/to/cert.pfx | tr -d '\n' | pbcopy
+     ```
+2. `WINDOWS_CERT_PASSWORD`: The password protecting your `.pfx` certificate.
+
+If these secrets are not configured, the CI workflow will cleanly skip the signing steps and produce unsigned releases.
+
+#### 2. Signing locally (PowerShell)
+
+Use `scripts/sign_windows.ps1` to sign release binaries with `signtool.exe`:
+
+```powershell
+# Build the application and installer
+flutter build windows --release
+dart run inno_bundle:build --release --no-app
+
+# Sign with your certificate
+.\scripts\sign_windows.ps1 -CertPath "C:\certs\my_cert.pfx" -CertPassword "your_password"
+```
+
+For local testing without a commercial certificate, create and sign with a self-signed certificate:
+```powershell
+.\scripts\sign_windows.ps1 -CreateSelfSigned -CertPassword "test1234"
+```
+
+#### 3. MSIX signing (Store & Enterprise)
+
+- **Microsoft Store**: Submit the unsigned `.msix` created with `dart run msix:create`. Microsoft signs it automatically during certification.
+- **Direct / Sideloading**: Set `certificate_path`, `certificate_password`, and `publisher` (matching the certificate Subject) in `pubspec.yaml` under `msix_config`.
+
+### macOS
+
+Unsigned apps trigger Gatekeeper. Users must right-click → Open the first time (or `xattr -d com.apple.quarantine`). To fix properly you need an Apple Developer ID certificate ($99/yr) and notarization (`codesign` + `notarytool`); add it to `scripts/build_macos_dmg.sh` once you have the certificate.
+
+For internal/team distribution, unsigned builds are fine.
 
 ## Icons
 

@@ -44,6 +44,10 @@ flutter_launcher_icons:
 # MSIX package (Microsoft Store / enterprise deployment) — build with:
 #   dart run msix:create
 # Keep msix_version in sync with version: above (four segments).
+# To sign with a certificate:
+#   certificate_path: "path/to/cert.pfx"
+#   certificate_password: "password"
+#   publisher: "CN=Genexis, O=Genexis" # Must match certificate Subject exactly
 msix_config:
   display_name: "MagicSoftSQL"
   publisher_display_name: "Genexis"
@@ -55,6 +59,7 @@ msix_config:
 # Inno Setup installer (setup.exe for direct distribution) — build on Windows with:
 #   flutter build windows --release
 #   dart run inno_bundle:build --release --no-app
+# Sign with scripts/sign_windows.ps1 or via GitHub Actions (WINDOWS_CERT_BASE64)
 # Output: build/windows/x64/installer/
 inno_bundle:
   id: "382E5891-375B-4E2D-886C-20EAE6BE2006" # installer AppId — never change or reuse
