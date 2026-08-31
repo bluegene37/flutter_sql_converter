@@ -3,7 +3,7 @@ description: "A high-performance desktop workbench that converts Magic UniPaaS/X
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.3.1
+version: 1.0.4+1
 
 environment:
   sdk: ^3.12.2
