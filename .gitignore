@@ -46,3 +46,55 @@ app.*.map.json
 
 # uniPaaS XML export: a local data drop, not project source (~2 GB)
 /source/
+
+# ------------------------------------------------------------------------------
+# Security & Sensitive Files
+# ------------------------------------------------------------------------------
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+*.env
+*.env.*
+secret*.json
+secrets.*
+
+# Keystores, Certificates, Private keys
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.crt
+*.der
+*.pkcs12
+key.properties
+local.properties
+
+# Firebase / Cloud service credentials & API keys
+**/google-services.json
+**/GoogleService-Info.plist
+**/firebase_options.dart
+**/client_secret*.json
+**/service-account*.json
+**/serviceAccountKey*.json
+
+# SSH & GPG keys
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.gpg
+
+# Auth tokens, credentials & history
+*.credential
+*.credentials
+.netrc
+.npmrc
+.pypirc
+*token*
+*.history
+
