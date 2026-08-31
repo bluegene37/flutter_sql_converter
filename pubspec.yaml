@@ -3,7 +3,7 @@ description: "A high-performance desktop workbench that converts Magic UniPaaS/X
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: ^3.12.2
@@ -48,7 +48,7 @@ msix_config:
   display_name: "MagicSoftSQL"
   publisher_display_name: "Genexis"
   identity_name: "dev.genexis.magicsoftsql"
-  msix_version: "1.0.1.0"
+  msix_version: "1.0.2.0"
   logo_path: "windows/runner/resources/app_icon.ico"
   capabilities: "internetClient"
 
