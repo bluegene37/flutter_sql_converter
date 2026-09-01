@@ -319,6 +319,28 @@ class RelationshipScannerService {
     return '$home/.flutter_sql_converter_relationships.json';
   }
 
+  /// Returns the saved graph for [directory] when the folder still matches the
+  /// fingerprint it was scanned under, and null otherwise. Never falls back to
+  /// a sweep: a null answer is the caller's cue to offer a scan rather than
+  /// start one behind the user's back.
+  Future<SchemaGraph?> loadCachedGraph(String directory) async {
+    try {
+      final dir = Directory(directory);
+      if (!await dir.exists()) return null;
+
+      final entries = await dir
+          .list()
+          .where((e) => e is File && e.path.toLowerCase().endsWith('.xml'))
+          .cast<File>()
+          .toList();
+      if (entries.isEmpty) return null;
+
+      return await _readCache(directory, await _fingerprint(entries));
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<RelationshipScanResult> scanDirectory(
     String directory,
     SchemaService schema, {

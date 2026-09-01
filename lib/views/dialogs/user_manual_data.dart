@@ -230,9 +230,9 @@ class UserManualData {
       ],
       sections: [
         ManualSection(
-          title: 'Automated Relationship Discovery',
+          title: 'On-Demand Relationship Discovery',
           description:
-              'Switching to the Schema tab triggers a background scan across all XML files in the source folder. The scanner analyzes Link conditions (<LNK>) to deduce foreign key relationships and table dependencies across your entire UniPaaS application.',
+              'Opening the Schema tab never starts a sweep on its own. It reuses the cached relationship graph when the source folder still matches it, and otherwise shows a banner offering to scan. The scanner analyzes Link conditions (<LNK>) to deduce foreign key relationships and table dependencies across your entire UniPaaS application.',
           tags: ['Scanner', 'Dependencies', 'Foreign Keys'],
         ),
         ManualSection(
@@ -240,7 +240,7 @@ class UserManualData {
           description:
               'Scanning thousands of XML files can be IO-intensive. MagicSoftSQL hashes directory metadata to build a persistent cache on disk. Subsequent launches load the complete relationship graph instantaneously in milliseconds.',
           tip:
-              'If you modify XML files externally, click the "Rescan" button in the header bar to invalidate the cache and force a complete re-sweep.',
+              'If you modify XML files externally, click "Rescan" in the header bar (or press Cmd/Ctrl + R). One rescan refreshes the program list and the relationship graph together, so both tabs come back up to date in a single pass.',
           shortcuts: ['Cmd + R', 'Ctrl + R'],
           tags: ['Performance', 'Cache', 'Hashing'],
         ),

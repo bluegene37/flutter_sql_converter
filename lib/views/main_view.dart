@@ -52,6 +52,11 @@ class _MainViewState extends State<MainView> {
   SchemaGraph _schemaGraph = SchemaGraph.empty;
   bool _isScanningRelationships = false;
   bool _hasScannedRelationships = false;
+
+  /// True once the schema browser has been opened and found no usable cached
+  /// graph for this folder. Nothing is scanned on the strength of it: it only
+  /// puts the offer of a scan in front of the user.
+  bool _relationshipScanPending = false;
   int _relationshipScanDone = 0;
   int _relationshipScanTotal = 0;
 
@@ -333,6 +338,7 @@ class _MainViewState extends State<MainView> {
     // lets the next one start rather than waiting on it.
     _schemaGraph = SchemaGraph.empty;
     _hasScannedRelationships = false;
+    _relationshipScanPending = false;
     _relationshipScanGeneration++;
     _isScanningRelationships = false;
 
@@ -555,9 +561,11 @@ class _MainViewState extends State<MainView> {
     if (currentMeta != null) {
       await _selectProgram(currentMeta, targetTask: currentTask);
     }
-    // The folder sweep cleared the relationship graph; rebuild it now if the
-    // schema browser is the visible tab.
-    if (_mode == AppMode.schema) await _ensureRelationshipScan();
+    // The folder sweep cleared the relationship graph. Rebuilding it in the
+    // same pass — whichever tab is showing — means one rescan brings both tabs
+    // up to date, instead of the schema browser sweeping again on its own the
+    // next time it is opened.
+    await _ensureRelationshipScan();
   }
 
   // ---------------------------------------------------------------------------
@@ -567,7 +575,31 @@ class _MainViewState extends State<MainView> {
   void _switchMode(AppMode mode) {
     if (_mode == mode) return;
     setState(() => _mode = mode);
-    if (mode == AppMode.schema) _ensureRelationshipScan();
+    if (mode == AppMode.schema) _loadCachedRelationships();
+  }
+
+  /// Opening the schema browser never starts the folder sweep. It takes the
+  /// cached graph when the folder still matches it — a fingerprint check, not a
+  /// scan — and otherwise raises the offer of one, the same way the generator
+  /// offers a rescan when the source folder has moved on.
+  Future<void> _loadCachedRelationships() async {
+    if (_hasScannedRelationships || _isScanningRelationships) return;
+    if (_sourceDirectory.isEmpty) return;
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return;
+
+    final generation = _relationshipScanGeneration;
+    final graph = await _relationshipScanner.loadCachedGraph(_sourceDirectory);
+    if (!mounted || generation != _relationshipScanGeneration) return;
+
+    setState(() {
+      if (graph == null) {
+        _relationshipScanPending = true;
+      } else {
+        _schemaGraph = graph;
+        _hasScannedRelationships = true;
+        _relationshipScanPending = false;
+      }
+    });
   }
 
   /// Sweeps every program for table relationships. Cheap after the first run:
@@ -586,6 +618,7 @@ class _MainViewState extends State<MainView> {
 
     setState(() {
       _isScanningRelationships = true;
+      _relationshipScanPending = false;
       _relationshipScanDone = 0;
       _relationshipScanTotal = 0;
     });
@@ -617,7 +650,10 @@ class _MainViewState extends State<MainView> {
       if (!result.fromCache) _showRelationshipScanSummary(result);
     } catch (e) {
       if (!isCurrent()) return;
-      setState(() => _isScanningRelationships = false);
+      setState(() {
+        _isScanningRelationships = false;
+        _relationshipScanPending = true;
+      });
       _showSnack(
         'Relationship scan failed: $e',
         icon: Icons.error_outline,
@@ -1020,6 +1056,7 @@ class _MainViewState extends State<MainView> {
                       schemaService: _schemaService,
                       graph: _schemaGraph,
                       isScanning: _isScanningRelationships,
+                      needsScan: _relationshipScanPending,
                       scanDone: _relationshipScanDone,
                       scanTotal: _relationshipScanTotal,
                       onRescan: () => _ensureRelationshipScan(force: true),

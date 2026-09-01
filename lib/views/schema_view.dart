@@ -23,6 +23,11 @@ class SchemaView extends StatefulWidget {
   /// True while the folder sweep is running; the browser stays usable and
   /// shows tables without their relationship counts until it lands.
   final bool isScanning;
+
+  /// True when no cached relationship graph covers the current folder. The
+  /// sweep reads every program, so it is offered here rather than started.
+  final bool needsScan;
+
   final int scanDone;
   final int scanTotal;
 
@@ -41,6 +46,7 @@ class SchemaView extends StatefulWidget {
     required this.schemaService,
     required this.graph,
     required this.isScanning,
+    required this.needsScan,
     required this.scanDone,
     required this.scanTotal,
     required this.onRescan,
@@ -216,7 +222,10 @@ class _SchemaViewState extends State<SchemaView> {
     return Column(
       children: [
         _buildToolbar(colors),
-        if (widget.isScanning) _buildScanProgress(colors),
+        if (widget.isScanning)
+          _buildScanProgress(colors)
+        else if (widget.needsScan)
+          _buildScanPrompt(colors),
         Expanded(child: _buildBody(colors)),
       ],
     );
@@ -270,6 +279,70 @@ class _SchemaViewState extends State<SchemaView> {
       ascending: _ascending,
       onSort: _sortBy,
       onOpen: _openTable,
+    );
+  }
+
+  /// Sits where the progress bar goes once a sweep is running, so the browser
+  /// stays put whether relationships are missing, arriving, or in.
+  Widget _buildScanPrompt(AppColors colors) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      decoration: BoxDecoration(
+        color: colors.isDark
+            ? const Color(0xFF2B210A)
+            : const Color(0xFFFEF3C7),
+        border: Border(
+          bottom: BorderSide(
+            color: colors.isDark
+                ? const Color(0xFF785B12)
+                : const Color(0xFFFDE68A),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.hub_outlined,
+            size: 16,
+            color: colors.isDark
+                ? const Color(0xFFFBBF24)
+                : const Color(0xFFB45309),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Table relationships have not been scanned for this folder. '
+              'Tables are listed without their links.',
+              style: GoogleFonts.inter(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: colors.isDark
+                    ? const Color(0xFFFDE68A)
+                    : const Color(0xFF92400E),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: widget.onRescan,
+            icon: const Icon(Icons.hub_outlined, size: 14),
+            label: Text(
+              'Scan relationships',
+              style:
+                  GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: colors.isDark
+                  ? const Color(0xFFD97706)
+                  : const Color(0xFFF59E0B),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              visualDensity: VisualDensity.compact,
+              elevation: 0,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

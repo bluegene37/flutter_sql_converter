@@ -58,6 +58,7 @@ Future<void> _pumpSchemaView(
   SchemaGraph? graph,
   void Function(String programName)? onOpenProgram,
   bool isScanning = false,
+  bool needsScan = false,
   Size size = const Size(1600, 1100),
   FocusNode? searchFocusNode,
 }) async {
@@ -74,6 +75,7 @@ Future<void> _pumpSchemaView(
         schemaService: schema,
         graph: graph ?? _graph,
         isScanning: isScanning,
+        needsScan: needsScan,
         scanDone: 0,
         scanTotal: 0,
         onRescan: () {},
@@ -102,6 +104,23 @@ void main() {
     expect(formatCount(3414), '3,414');
     expect(formatCount(20879), '20,879');
     expect(formatCount(1234567), '1,234,567');
+  });
+
+  testWidgets('an unscanned folder offers the sweep instead of running it',
+      (tester) async {
+    await _pumpSchemaView(tester, needsScan: true);
+
+    expect(
+      find.textContaining('have not been scanned for this folder'),
+      findsOneWidget,
+    );
+    expect(find.text('Scan relationships'), findsOneWidget);
+  });
+
+  testWidgets('a scanned folder shows no scan prompt', (tester) async {
+    await _pumpSchemaView(tester);
+
+    expect(find.text('Scan relationships'), findsNothing);
   });
 
   testWidgets('cards view lists every table with its relationship count',
@@ -349,6 +368,7 @@ void main() {
       home: Scaffold(
         body: SchemaView(
           schemaService: schema,
+          needsScan: false,
           graph: SchemaGraph.from(const [
             SchemaRelationship(
               fromTable: 'CSRMATZMYFLO_IDOC',
