@@ -524,6 +524,11 @@ class _MainViewState extends State<MainView> {
     }
     setState(() => _isLoading = false);
 
+    // The graph was cleared above. When the schema browser is already the
+    // visible tab there is no tab switch coming to put the scan offer (or the
+    // cached graph) back, so do it here rather than leave the tables linkless.
+    if (_mode == AppMode.schema) _loadCachedRelationships();
+
     if (showSuccessMessage && mounted) {
       final colors = AppColors.of(context);
       final readyCount = scannedPrograms.where((p) => p.hasTables).length;
