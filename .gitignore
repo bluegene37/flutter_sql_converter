@@ -98,3 +98,19 @@ id_ed25519.pub
 *token*
 *.history
 
+
+# ------------------------------------------------------------------------------
+# Docs, AI-assistant files, and dev-only tooling (not needed to build/run the app)
+# ------------------------------------------------------------------------------
+*.md
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+.claude/
+.gstack/
+.cursor/
+.windsurf/
+.antigravity/
+docs/
+/tool/qa_*.dart
+/scripts/extract_locate.py
