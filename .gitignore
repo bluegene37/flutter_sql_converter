@@ -100,9 +100,9 @@ id_ed25519.pub
 
 
 # ------------------------------------------------------------------------------
-# Docs, AI-assistant files, and dev-only tooling (not needed to build/run the app)
+# AI-assistant files and dev-only tooling (not needed to build/run the app).
+# Project docs meant for GitHub (README.md, RELEASING.md, CHANGELOG.md, ...) stay tracked.
 # ------------------------------------------------------------------------------
-*.md
 CLAUDE.md
 AGENTS.md
 GEMINI.md
@@ -111,6 +111,8 @@ GEMINI.md
 .cursor/
 .windsurf/
 .antigravity/
-docs/
+docs/superpowers/
+/plans/
+/specs/
 /tool/qa_*.dart
 /scripts/extract_locate.py
