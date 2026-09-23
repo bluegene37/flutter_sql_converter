@@ -401,6 +401,55 @@ class OrderByTerm {
   });
 }
 
+/// An input argument passed into a Direct SQL task (:1, :2, etc.).
+class DirectSqlArgument {
+  final int index;
+  final String id;
+  final String expVal;
+  final String expressionSyntax;
+  final String value;
+
+  DirectSqlArgument({
+    required this.index,
+    required this.id,
+    required this.expVal,
+    this.expressionSyntax = '',
+    this.value = '',
+  });
+}
+
+/// An output argument mapping a column selected by a Direct SQL task.
+class DirectSqlOutArgument {
+  final int index;
+  final String variable;
+  final String varName;
+  final String sqlType;
+
+  DirectSqlOutArgument({
+    required this.index,
+    required this.variable,
+    this.varName = '',
+    this.sqlType = '',
+  });
+}
+
+/// Direct SQL configuration and query for a task.
+class DirectSqlInfo {
+  final String database;
+  final String resultDatabase;
+  final String sqlStatement;
+  final List<DirectSqlArgument> inputArguments;
+  final List<DirectSqlOutArgument> outputArguments;
+
+  DirectSqlInfo({
+    required this.database,
+    required this.resultDatabase,
+    required this.sqlStatement,
+    this.inputArguments = const [],
+    this.outputArguments = const [],
+  });
+}
+
 class ParsedTask {
   final String taskId;
   final String taskIsn;
@@ -446,6 +495,9 @@ class ParsedTask {
   final String dataSource;
   final bool mainSourceIsSql;
 
+  /// Direct SQL metadata if this task executes raw SQL.
+  final DirectSqlInfo? directSql;
+
   ParsedTask({
     required this.taskId,
     this.taskIsn = '1',
@@ -468,11 +520,14 @@ class ParsedTask {
     this.orderBy = const [],
     this.dataSource = '',
     this.mainSourceIsSql = true,
+    this.directSql,
   }) : mainTableAlias = mainTableAlias ?? mainTableName;
 
   bool get isChild => level > 0 || (parentTaskId != null && parentTaskId!.isNotEmpty);
 
   bool get hasSubTasks => subTasks.isNotEmpty;
+
+  bool get isDirectSql => directSql != null;
 
   /// The full label, given the program's position in the list: `#12` for a root
   /// task, `#12.1.2` for a grandchild.
@@ -480,7 +535,9 @@ class ParsedTask {
       hierarchyPath.isEmpty ? '#$programNumber' : '#$programNumber.$hierarchyPath';
 
   bool get hasDataSource =>
-      (mainTableObj.isNotEmpty && mainTableObj != '0') || joins.isNotEmpty;
+      isDirectSql ||
+      (mainTableObj.isNotEmpty && mainTableObj != '0') ||
+      joins.isNotEmpty;
 
   List<ParsedTask> get allDescendantsFlattened {
     final list = <ParsedTask>[this];

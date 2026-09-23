@@ -560,6 +560,87 @@ class XmlParserService {
     // --- Task-level SQL WHERE, written by hand in the uniPaaS task.
     final sqlWhereClause = _parseSqlWhere(taskNode, fieldRefs, columnByField);
 
+    // --- Direct SQL: raw query executed against DB instead of normal table read.
+    DirectSqlInfo? directSql;
+    final sqlForm = taskNode.findElements('SQL_FORM').firstOrNull ??
+        taskNode.findAllElements('SQL_FORM').firstOrNull;
+    final isSqlTask = headerNode?.findElements('SQL').firstOrNull?.getAttribute('val') == 'Y' ||
+        sqlForm != null;
+
+    if (isSqlTask && sqlForm != null) {
+      final db = sqlForm.getAttribute('DB') ?? '';
+      final restab = sqlForm.getAttribute('RESTAB') ?? '';
+      final rawSql = sqlForm.findElements('SQL_STMT_U').firstOrNull?.getAttribute('val') ?? '';
+      final normalizedSql = rawSql
+          .replaceAll('\r\n', '\n')
+          .replaceAll('\r', '\n');
+
+      final inArgs = <DirectSqlArgument>[];
+      final inArgNodes = sqlForm
+          .findElements('INARG')
+          .firstOrNull
+          ?.findElements('Arguments')
+          .firstOrNull
+          ?.findElements('Argument');
+      if (inArgNodes != null) {
+        var argIdx = 1;
+        for (final arg in inArgNodes) {
+          final argId = arg.findElements('id').firstOrNull?.getAttribute('val') ?? '$argIdx';
+          final expVal = arg.findElements('Exp').firstOrNull?.getAttribute('val') ?? '';
+          final rawSyntax = expMap[expVal] ?? '';
+          final resolvedSyntax = resolve(expVal);
+
+          if (resolvedSyntax.isNotEmpty) {
+            _registerImplicitParameters(
+                resolvedSyntax, extractedParameters, ancestorTypes, ancestorNotes);
+          }
+
+          inArgs.add(DirectSqlArgument(
+            index: argIdx,
+            id: argId,
+            expVal: expVal,
+            expressionSyntax: resolvedSyntax.isNotEmpty ? resolvedSyntax : rawSyntax,
+          ));
+          argIdx++;
+        }
+      }
+
+      final outArgs = <DirectSqlOutArgument>[];
+      final outArgNodes = sqlForm
+          .findElements('OUTARG')
+          .firstOrNull
+          ?.findElements('Arguments')
+          .firstOrNull
+          ?.findElements('Argument');
+      if (outArgNodes != null) {
+        var outIdx = 1;
+        for (final arg in outArgNodes) {
+          final variable = arg.getAttribute('Variable') ?? '$outIdx';
+          final varName = varByPosition[variable] ??
+              varByIsn[variable] ??
+              'Col_$outIdx';
+          final sqlType = varTypeByPosition[variable] ??
+              varTypeByIsn[variable] ??
+              '';
+          outArgs.add(DirectSqlOutArgument(
+            index: outIdx,
+            variable: variable,
+            varName: varName,
+            sqlType: sqlType,
+          ));
+          outIdx++;
+        }
+      }
+
+      directSql = DirectSqlInfo(
+        database: db,
+        resultDatabase: restab,
+        sqlStatement: normalizedSql,
+        inputArguments: inArgs,
+        outputArguments: outArgs,
+      );
+    }
+
     // --- ORDER BY, from the index the dataview reads through.
     final orderBy = _buildOrderBy(
       taskNode: taskNode,
@@ -627,8 +708,9 @@ class XmlParserService {
       }.toList(),
       initialMode: informationNode?.findElements('InitialMode').firstOrNull?.getAttribute('val') ?? '',
       orderBy: orderBy,
-      dataSource: schemaService.getDataSource(mainTableObj),
-      mainSourceIsSql: mainTableObj.isEmpty || schemaService.isSqlTable(mainTableObj),
+      dataSource: directSql != null ? directSql.database : schemaService.getDataSource(mainTableObj),
+      mainSourceIsSql: directSql != null ? true : (mainTableObj.isEmpty || schemaService.isSqlTable(mainTableObj)),
+      directSql: directSql,
     );
   }
 

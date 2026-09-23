@@ -89,6 +89,11 @@ class SqlGeneratorService {
         used.write(' ${col.initExpression}');
       }
       used.write(' ${task.sqlWhereClause}');
+      if (task.directSql != null) {
+        for (final arg in task.directSql!.inputArguments) {
+          used.write(' ${arg.expressionSyntax}');
+        }
+      }
     }
     final usedText = used.toString();
 
@@ -167,6 +172,16 @@ class SqlGeneratorService {
       }
     }
 
+    if (task.isDirectSql) {
+      _writeDirectSql(
+        buffer: buffer,
+        task: task,
+        paramMap: paramMap,
+        injectValues: injectValues,
+      );
+      return;
+    }
+
     if (!task.hasDataSource) {
       buffer.writeln('-- This task has no data source; it is pure logic and produces no SQL.\n');
       return;
@@ -215,6 +230,76 @@ class SqlGeneratorService {
       paramMap: paramMap,
       injectValues: injectValues,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Direct SQL
+  // ---------------------------------------------------------------------------
+
+  void _writeDirectSql({
+    required StringBuffer buffer,
+    required ParsedTask task,
+    required Map<String, ProgramParameter> paramMap,
+    required bool injectValues,
+  }) {
+    final direct = task.directSql!;
+    buffer.writeln('-- Direct SQL Query');
+    buffer.writeln('-- Database: ${direct.database}'
+        '${direct.resultDatabase.isNotEmpty && direct.resultDatabase != direct.database ? " | Result Database: ${direct.resultDatabase}" : ""}');
+    buffer.writeln('-- Input Arguments: ${direct.inputArguments.length} | Output Arguments: ${direct.outputArguments.length}');
+
+    if (direct.inputArguments.isNotEmpty) {
+      buffer.writeln('-- SQL Arguments:');
+      for (final arg in direct.inputArguments) {
+        final syn = arg.expressionSyntax.isNotEmpty ? ' = ${arg.expressionSyntax}' : '';
+        buffer.writeln('--   :${arg.index}$syn');
+      }
+    }
+    buffer.writeln();
+
+    var statement = direct.sqlStatement.trim();
+    if (statement.isNotEmpty) {
+      if (injectValues && direct.inputArguments.isNotEmpty) {
+        for (final arg in direct.inputArguments) {
+          final placeholder = ':${arg.index}';
+          final paramName = arg.expressionSyntax.replaceAll('@', '').trim();
+          final param = paramMap[paramName];
+          if (param != null && param.currentValue.isNotEmpty) {
+            final val = _formatSqlLiteral(param.currentValue, param.type);
+            statement = statement.replaceAll(RegExp('$placeholder(?![0-9])'), val);
+          }
+        }
+      }
+      buffer.writeln(statement.endsWith(';') ? statement : '$statement;');
+    } else {
+      buffer.writeln('-- (Empty SQL statement)');
+    }
+    buffer.writeln();
+
+    if (task.joins.isNotEmpty) {
+      buffer.writeln('-- ----------------------------------------------------------------------------');
+      buffer.writeln('-- Secondary Link Queries for this Direct SQL task\'s record cycle');
+      buffer.writeln('-- ----------------------------------------------------------------------------');
+      for (final join in task.joins) {
+        final target = join.targetTableName;
+        buffer.writeln('-- ${join.mode == "R" ? "Link Query" : "Link"} on [$target]');
+        final cols = task.columns.where((c) => c.tableObj == join.targetTableObj).toList();
+        if (cols.isNotEmpty) {
+          buffer.writeln('SELECT');
+          for (int i = 0; i < cols.length; i++) {
+            buffer.writeln('    [${cols[i].tableName}].[${cols[i].colName}] AS [${cols[i].alias}]${i == cols.length - 1 ? '' : ','}');
+          }
+          buffer.writeln('FROM [$target] WITH (NOLOCK)');
+          if (join.conditions.isNotEmpty) {
+            for (int i = 0; i < join.conditions.length; i++) {
+              final prefix = (i == 0) ? 'WHERE ' : '  AND ';
+              buffer.writeln(prefix + _renderJoinCondition(target, join.conditions[i], paramMap, injectValues));
+            }
+          }
+          buffer.writeln(';\n');
+        }
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------

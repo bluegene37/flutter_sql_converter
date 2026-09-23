@@ -22,6 +22,7 @@ import '../widgets/sql_view.dart';
 import '../widgets/update_check_button.dart';
 import 'dialogs/user_manual_dialog.dart';
 import 'schema_view.dart';
+import '../widgets/direct_sql_dialog.dart';
 
 /// The two things the app does: turn a program into SQL, and show how the
 /// programs wire the database together.
@@ -429,7 +430,10 @@ class _MainViewState extends State<MainView> {
             (m) => m.group(1) != '0' && m.group(1)!.isNotEmpty,
           );
           final hasLnk = content.contains('<LNK ');
-          hasTables = hasValidDb || hasLnk;
+          final hasDirectSql = content.contains('<SQL_FORM') ||
+              content.contains('<SQL val="Y"') ||
+              content.contains("<SQL val='Y'");
+          hasTables = hasValidDb || hasLnk || hasDirectSql;
         } catch (_) {
           hasTables = true;
         }
@@ -2173,6 +2177,31 @@ class _MainViewState extends State<MainView> {
                 style: GoogleFonts.firaCode(color: colors.textMuted, fontSize: 9),
               ),
             ],
+            if (task.isDirectSql) ...[
+              const SizedBox(width: 4),
+              Tooltip(
+                message: 'Direct SQL (${task.directSql?.database ?? ""})',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: colors.accentSecondary.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(
+                      color: colors.accentSecondary.withValues(alpha: 0.4),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Text(
+                    'SQL',
+                    style: GoogleFonts.firaCode(
+                      color: colors.accentSecondary,
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
             if (!task.hasDataSource) ...[
               const SizedBox(width: 4),
               Tooltip(
@@ -2355,6 +2384,43 @@ class _MainViewState extends State<MainView> {
           Text(
             'all tasks',
             style: GoogleFonts.inter(color: colors.textMuted, fontSize: 11.5),
+          ),
+        ],
+        if (task != null && task.isDirectSql) ...[
+          const SizedBox(width: 10),
+          InkWell(
+            onTap: () => showDirectSqlCommandDialog(
+              context,
+              task: task,
+              programName: meta.name,
+              programNumber: programNumber,
+            ),
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: colors.accentSecondary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: colors.accentSecondary.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.terminal, size: 13, color: colors.accentSecondary),
+                  const SizedBox(width: 5),
+                  Text(
+                    'Direct SQL: ${task.directSql!.database.isEmpty ? "(Default)" : task.directSql!.database}',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: colors.accentSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ],
