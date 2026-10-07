@@ -12,3 +12,6 @@ PRODUCT_BUNDLE_IDENTIFIER = dev.genexis.magicsoftsql
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 genexis.dev. All rights reserved.
+
+// Gene - Oct 7, 2026: Set Apple Development Team ID for macOS release and code signing
+DEVELOPMENT_TEAM = T7LB768N2Z

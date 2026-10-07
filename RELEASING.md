@@ -127,11 +127,70 @@ For local testing without a commercial certificate, create and sign with a self-
 - **Microsoft Store**: Submit the unsigned `.msix` created with `dart run msix:create`. Microsoft signs it automatically during certification.
 - **Direct / Sideloading**: Set `certificate_path`, `certificate_password`, and `publisher` (matching the certificate Subject) in `pubspec.yaml` under `msix_config`.
 
+<!-- Previous text:
 ### macOS
 
 Unsigned apps trigger Gatekeeper. Users must right-click → Open the first time (or `xattr -d com.apple.quarantine`). To fix properly you need an Apple Developer ID certificate ($99/yr) and notarization (`codesign` + `notarytool`); add it to `scripts/build_macos_dmg.sh` once you have the certificate.
 
 For internal/team distribution, unsigned builds are fine.
+-->
+
+<!-- Gene - Oct 7, 2026: Documented Apple Developer ID code signing, hardened runtime, and notarytool notarization flow -->
+### macOS
+
+macOS releases are distributed outside the App Store as a drag-to-install `.dmg` signed with an Apple **Developer ID Application** certificate and notarized by Apple so Gatekeeper opens the app seamlessly without security warnings.
+
+#### 1. Signing & Notarization requirements
+
+- **Developer ID Application Certificate**: Installed in macOS Keychain (Identity: `Developer ID Application: Gene Ray Medel (T7LB768N2Z)`).
+- **Apple Development Team ID**: `T7LB768N2Z` (configured in `macos/Runner/Configs/AppInfo.xcconfig`).
+- **Hardened Runtime & Entitlements**: Frameworks and app bundle are signed with `--options runtime` and `macos/Runner/Release.entitlements`.
+- **Notarization**: Apple `notarytool` submits the DMG to Apple and staples the ticket with `stapler`.
+
+#### 2. One-time Setup for Notarization (Apple ID App-Specific Password)
+
+Generate an App-Specific Password at [appleid.apple.com](https://appleid.apple.com) under **Sign-In and Security → App-Specific Passwords**.
+
+Store the credentials in your macOS Keychain:
+
+```bash
+xcrun notarytool store-credentials "notarytool-profile" \
+  --apple-id "bluegene37@outlook.com" \
+  --team-id "T7LB768N2Z"
+```
+*(Enter your generated app-specific password when prompted).*
+
+#### 3. Building, Signing, and Notarizing Locally
+
+Run the DMG build script with the notary profile:
+
+```bash
+NOTARY_PROFILE="notarytool-profile" bash scripts/build_macos_dmg.sh
+```
+
+This single command will:
+1. Build `flutter build macos --release`.
+2. Automatically locate the `Developer ID Application` certificate from Keychain.
+3. Sign all embedded frameworks (`objective_c.framework`, `FlutterMacOS.framework`, `App.framework`, and plugin frameworks) with hardened runtime and secure timestamps.
+4. Sign `MagicSoftSQL.app` with hardened runtime and entitlements.
+5. Create `build/MagicSoftSQL-<version>.dmg`.
+6. Sign the DMG container with `Developer ID Application`.
+7. Submit the DMG to Apple's Notary Service and wait for approval.
+8. Staple the notarization ticket to the DMG (`xcrun stapler staple`).
+9. Verify with Gatekeeper (`spctl --assess`).
+
+#### 4. Configuring GitHub Actions CI (Optional)
+
+To enable automated macOS signing and notarization on CI runners (`macos-latest`), add the following secrets in **GitHub repo → Settings → Secrets and variables → Actions**:
+
+- `MACOS_CERTIFICATE_BASE64`: Base64-encoded `.p12` export of your Developer ID Application certificate and private key.
+- `MACOS_CERTIFICATE_PASSWORD`: Password protecting the `.p12` file.
+- `MACOS_APPLE_ID`: Your Apple ID email (`bluegene37@outlook.com`).
+- `MACOS_APP_SPECIFIC_PASSWORD`: Your Apple app-specific password.
+- `MACOS_TEAM_ID`: Your Apple Team ID (`T7LB768N2Z`).
+
+If secrets are not configured, CI produces clean unsigned builds while local builds use your Keychain certificate.
+
 
 ## Icons
 

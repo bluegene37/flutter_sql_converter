@@ -101,6 +101,24 @@ jobs:
           name: windows-installer
           path: build/windows/x64/installer/**/*.exe
 
+# Previous implementation:
+#   macos-dmg:
+#     runs-on: macos-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: subosito/flutter-action@v2
+#         with:
+#           channel: stable
+#           cache: true
+#       - run: flutter pub get
+#       - run: flutter test
+#       - run: bash scripts/build_macos_dmg.sh
+#       - uses: actions/upload-artifact@v4
+#         with:
+#           name: macos-dmg
+#           path: build/*.dmg
+
+# Gene - Oct 7, 2026: Added macOS code signing keychain import, notarization credentials, and cleanup to CI release workflow
   macos-dmg:
     runs-on: macos-latest
     steps:
@@ -111,7 +129,49 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter test
-      - run: bash scripts/build_macos_dmg.sh
+
+      # Set up macOS signing keychain (if MACOS_CERTIFICATE_BASE64 secret is configured)
+      - name: Set up macOS code signing keychain
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "${MACOS_CERTIFICATE_BASE64}" ]; then
+            echo "MACOS_CERTIFICATE_BASE64 secret is not configured. Skipping keychain import."
+            exit 0
+          fi
+          CERT_PATH="$RUNNER_TEMP/macos_cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          echo "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "actions" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "actions" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "${MACOS_CERTIFICATE_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "actions" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          rm -f "$CERT_PATH"
+
+      # Build and sign DMG (and notarize if credentials provided)
+      - name: Build and package macOS DMG
+        shell: bash
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.MACOS_APPLE_ID }}
+          NOTARY_APP_PASSWORD: ${{ secrets.MACOS_APP_SPECIFIC_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          bash scripts/build_macos_dmg.sh
+
+      # Clean up CI keychain
+      - name: Clean up keychain
+        if: always()
+        shell: bash
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
