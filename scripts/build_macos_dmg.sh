@@ -28,29 +28,38 @@ VERSION=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml | tr -d ' ')
 OUT="build/MagicSoftSQL-${VERSION}.dmg"
 ENTITLEMENTS="macos/Runner/Release.entitlements"
 
-# 1. Resolve signing identity (env CODESIGN_IDENTITY or auto-detect from keychain)
-IDENTITY="${CODESIGN_IDENTITY:-}"
+# Previous inlined signing logic:
+# # 1. Resolve signing identity (env CODESIGN_IDENTITY or auto-detect from keychain)
+# IDENTITY="${CODESIGN_IDENTITY:-}"
+# if [ -z "$IDENTITY" ]; then
+#   IDENTITY=$(security find-identity -p codesigning -v | grep "Developer ID Application:" | head -n 1 | sed -E 's/.*"(Developer ID Application: [^"]+)".*/\1/' || true)
+# fi
+#
+# if [ -n "$IDENTITY" ]; then
+#   echo "==> Found Apple Developer ID identity: $IDENTITY"
+#   echo "==> Signing embedded frameworks and libraries..."
+#   if [ -d "$APP/Contents/Frameworks" ]; then
+#     find "$APP/Contents/Frameworks" -depth \( -name "*.framework" -o -name "*.dylib" \) | while read -r fw; do
+#       echo "    Signing: $(basename "$fw")"
+#       codesign --force --verify --verbose --timestamp --options runtime --sign "$IDENTITY" "$fw"
+#     done
+#   fi
+#
+#   echo "==> Signing main application bundle with hardened runtime..."
+#   codesign --force --verify --verbose --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
+#
+#   echo "==> Verifying app bundle signature..."
+#   codesign --verify --deep --strict --verbose=2 "$APP"
+# else
+#   echo "==> WARNING: No Developer ID Application identity found in keychain. Skipping app bundle signing."
+# fi
+
+# Gene - Oct 7, 2026: Delegate application bundle signing to standalone scripts/sign_macos_app.sh
+bash scripts/sign_macos_app.sh "$APP"
+
+IDENTITY="${CODESIGN_IDENTITY:-${MACOS_SIGN_IDENTITY:-}}"
 if [ -z "$IDENTITY" ]; then
   IDENTITY=$(security find-identity -p codesigning -v | grep "Developer ID Application:" | head -n 1 | sed -E 's/.*"(Developer ID Application: [^"]+)".*/\1/' || true)
-fi
-
-if [ -n "$IDENTITY" ]; then
-  echo "==> Found Apple Developer ID identity: $IDENTITY"
-  echo "==> Signing embedded frameworks and libraries..."
-  if [ -d "$APP/Contents/Frameworks" ]; then
-    find "$APP/Contents/Frameworks" -depth \( -name "*.framework" -o -name "*.dylib" \) | while read -r fw; do
-      echo "    Signing: $(basename "$fw")"
-      codesign --force --verify --verbose --timestamp --options runtime --sign "$IDENTITY" "$fw"
-    done
-  fi
-
-  echo "==> Signing main application bundle with hardened runtime..."
-  codesign --force --verify --verbose --timestamp --options runtime --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
-
-  echo "==> Verifying app bundle signature..."
-  codesign --verify --deep --strict --verbose=2 "$APP"
-else
-  echo "==> WARNING: No Developer ID Application identity found in keychain. Skipping app bundle signing."
 fi
 
 # 2. Stage and create the DMG
@@ -72,7 +81,18 @@ if [ -n "$IDENTITY" ]; then
 fi
 
 # 4. Apple Notarization (if credentials are provided)
+# Previous implementation:
+# NOTARY_PROFILE="${NOTARY_PROFILE:-${KEYCHAIN_PROFILE:-}}"
+
+# Gene - Oct 09, 2026: Default to existing stored keychain profile 'batterie-notary' if NOTARY_PROFILE is not explicitly set
 NOTARY_PROFILE="${NOTARY_PROFILE:-${KEYCHAIN_PROFILE:-}}"
+if [ -z "$NOTARY_PROFILE" ]; then
+  if xcrun notarytool history --keychain-profile "batterie-notary" >/dev/null 2>&1; then
+    NOTARY_PROFILE="batterie-notary"
+  elif xcrun notarytool history --keychain-profile "notarytool-profile" >/dev/null 2>&1; then
+    NOTARY_PROFILE="notarytool-profile"
+  fi
+fi
 
 if [ -n "$NOTARY_PROFILE" ]; then
   echo "==> Submitting $OUT for Apple notarization using keychain profile '$NOTARY_PROFILE'..."

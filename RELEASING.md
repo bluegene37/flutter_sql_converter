@@ -147,6 +147,7 @@ macOS releases are distributed outside the App Store as a drag-to-install `.dmg`
 - **Hardened Runtime & Entitlements**: Frameworks and app bundle are signed with `--options runtime` and `macos/Runner/Release.entitlements`.
 - **Notarization**: Apple `notarytool` submits the DMG to Apple and staples the ticket with `stapler`.
 
+<!-- Previous text:
 #### 2. One-time Setup for Notarization (Apple ID App-Specific Password)
 
 Generate an App-Specific Password at [appleid.apple.com](https://appleid.apple.com) under **Sign-In and Security → App-Specific Passwords**.
@@ -167,17 +168,58 @@ Run the DMG build script with the notary profile:
 ```bash
 NOTARY_PROFILE="notarytool-profile" bash scripts/build_macos_dmg.sh
 ```
+-->
+
+<!-- Gene - Oct 09, 2026: Updated instructions to document auto-detection of existing 'batterie-notary' profile -->
+#### 2. Notarization Credentials (`batterie-notary`)
+
+`scripts/build_macos_dmg.sh` automatically detects your existing stored Keychain profile `batterie-notary` (shared with the `batterie` and `snipsnap` projects).
+
+If setting up on a new Mac or creating a fresh profile, generate an App-Specific Password at [appleid.apple.com](https://appleid.apple.com) and store it:
+
+```bash
+xcrun notarytool store-credentials "batterie-notary" \
+  --apple-id "bluegene37@outlook.com" \
+  --team-id "T7LB768N2Z"
+```
+
+#### 3. Building, Signing, and Notarizing Locally
+
+Run the DMG build script (it will automatically sign, submit to Apple, staple, and verify):
+
+```bash
+bash scripts/build_macos_dmg.sh
+```
 
 This single command will:
 1. Build `flutter build macos --release`.
-2. Automatically locate the `Developer ID Application` certificate from Keychain.
-3. Sign all embedded frameworks (`objective_c.framework`, `FlutterMacOS.framework`, `App.framework`, and plugin frameworks) with hardened runtime and secure timestamps.
-4. Sign `MagicSoftSQL.app` with hardened runtime and entitlements.
-5. Create `build/MagicSoftSQL-<version>.dmg`.
-6. Sign the DMG container with `Developer ID Application`.
-7. Submit the DMG to Apple's Notary Service and wait for approval.
-8. Staple the notarization ticket to the DMG (`xcrun stapler staple`).
-9. Verify with Gatekeeper (`spctl --assess`).
+2. Run `scripts/sign_macos_app.sh` to sign embedded frameworks (`objective_c.framework`, `FlutterMacOS.framework`, `App.framework`, and plugins) and `MagicSoftSQL.app` with hardened runtime, secure timestamps, and entitlements.
+3. Create `build/MagicSoftSQL-<version>.dmg`.
+4. Sign the DMG container with `Developer ID Application`.
+5. Submit the DMG to Apple's Notary Service and wait for approval.
+6. Staple the notarization ticket to the DMG (`xcrun stapler staple`).
+7. Verify with Gatekeeper (`spctl --assess`).
+
+<!-- Gene - Oct 7, 2026: Documented standalone sign_macos_app.sh and Gatekeeper "Move to Trash" notarization cause -->
+#### Standalone App Signing (`scripts/sign_macos_app.sh`)
+
+To sign an already-built `.app` bundle separately without rebuilding or packaging a DMG:
+
+```bash
+bash scripts/sign_macos_app.sh build/macos/Build/Products/Release/MagicSoftSQL.app
+```
+
+#### Why Gatekeeper Says "Will Damage Your Computer / Move to Trash"
+
+When an app is downloaded from the internet, macOS applies the `com.apple.quarantine` attribute.
+- If an app is **signed with Developer ID but NOT NOTARIZED by Apple**, macOS Gatekeeper rejects it with:
+  *"MagicSoftSQL will damage your computer. You should move it to the Trash"* or *"Apple cannot check it for malicious software"*.
+- **The fix is Apple Notarization**: Submitting the DMG to Apple (`xcrun notarytool submit`) and stapling the ticket (`xcrun stapler staple`). Once stapled, macOS validates the Apple ticket and allows users to open the app with a normal confirmation prompt.
+- For local testing before notarization, you can strip quarantine with:
+  ```bash
+  xattr -d com.apple.quarantine /path/to/downloaded/MagicSoftSQL.dmg
+  ```
+
 
 #### 4. Configuring GitHub Actions CI (Optional)
 
